@@ -36,7 +36,7 @@ def ffmpeg_encoder(outfile, fps, width, height):
         hwaccel="cuda",
         hwaccel_device="0",
         hwaccel_output_format="cuda",
-        # thread_queue_size=1,
+        thread_queue_size=1,
     )
 
     if torch.cuda.is_available():
@@ -236,7 +236,10 @@ if __name__=='__main__':
             
     #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
-    ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
+    if torch.cuda.is_available():
+        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
+    else:
+        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
     
