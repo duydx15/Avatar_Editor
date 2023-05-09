@@ -53,11 +53,11 @@ def ffmpeg_encoder(outfile, fps, width, height):
                 # vcodec="libx264",
                 vcodec=codec,
                 acodec="copy",
-                hwaccel="cuda",
-                hwaccel_device="0",
-                hwaccel_output_format="cuda",
+                # hwaccel="cuda",
+                # hwaccel_device="0",
+                # hwaccel_output_format="cuda",
                 r=fps,
-                crf=17,
+                # crf=17,
                 vsync="1",
                 # async=4,
             )
@@ -220,7 +220,7 @@ def load_godot_video():
     global cap_merge,count_godot_video,list_video_path, merge_status
     merge_status = True
     count_godot_video +=1
-    print("Video godot ",count_godot_video +1, " th")
+    # print("Video godot ",count_godot_video +1, " th")
     
 
 if __name__=='__main__':
@@ -243,7 +243,7 @@ if __name__=='__main__':
      #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
-        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
+        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
     else:
         ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
     os.system(ffmpeg_cmd_main_video_tmp)
@@ -325,7 +325,7 @@ if __name__=='__main__':
             w_merge, h_merge = int(cap_merge.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap_merge.get(cv2.CAP_PROP_FRAME_HEIGHT))
             old_corner = np.array([(0,0),(w_merge,0),(w_merge,h_merge),(0,h_merge)], np.int32)
             old_corner = old_corner.reshape(-1,1,2)
-            new_corners = np.int32(List_points[count_godot_video]*[width,height])
+            new_corners = np.int32(List_points[count_godot_video-1]*[width,height])
             # print(new_corners) 
             M_coor, _ = cv2.findHomography(old_corner, new_corners)
             
@@ -345,11 +345,11 @@ if __name__=='__main__':
             
             while cap_merge.isOpened():
                 ret_merge, frame_merge = cap_merge.read()
-                if not ret_merge and count_godot_video < len(video_captures)-1:
+                if not ret_merge and count_godot_video < len(video_captures):
                     merge_status = False
-                    count_godot_video += 1
+                    # count_godot_video += 1
                     break
-                elif not ret_merge and count_godot_video >= len(video_captures)-1:
+                elif not ret_merge and count_godot_video >= len(video_captures):
                     count_frame +=1
                     print("Writing last part")
                     while  cap.isOpened():
@@ -376,6 +376,10 @@ if __name__=='__main__':
                 output_main = blend_images_using_mask(mask_fr,frame,mask)
                 write_frame(output_main,encoder_video)
                 tqdm.update(1)
+                if count_frame in Timestamp_start:
+                    print("Merging godot video - ", count_godot_video+1 , " - Frame start: ",count_frame)
+                    load_godot_video()
+                    break
             # if count_frame > 400:
             #     break
     cap.release()
@@ -406,7 +410,7 @@ if __name__=='__main__':
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
+            ffmpeg_cmd = f"""sudo ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -422,7 +426,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f"""ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
+            ffmpeg_cmd = f"""sudo ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             

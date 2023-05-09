@@ -77,9 +77,10 @@ def ffmpeg_encoder(outfile, fps, width, height):
 def fine_tune_timestamp(list_start,list_stop):
     list_stop = list_stop[:-1]
     list_stop.insert(0,0)
+    # print("~~~",list_stop)
     for i in range(len(list_start)):
         if list_start[i] <= list_stop[i]:
-            list_start[i] = list_stop[i]+2
+            list_start[i] = list_stop[i]+1
     return list_start
 
 def mix_pixel(pix_1, pix_2, perc):
@@ -214,8 +215,8 @@ def find_other_corners(top_left, width, height, X):
 def load_godot_video():
     global cap_merge,count_godot_video,list_video_path, merge_status
     merge_status = True
-    # count_godot_video +=1
-    print("Video godot ",count_godot_video +1, " th")
+    count_godot_video +=1
+    # print("Video godot ",count_godot_video +1, " th")
     
 
 if __name__=='__main__':
@@ -237,7 +238,7 @@ if __name__=='__main__':
     #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
-        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
+        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
     else:
         ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
     os.system(ffmpeg_cmd_main_video_tmp)
@@ -264,7 +265,7 @@ if __name__=='__main__':
     
     # Define the background color to be removed
     list_frame_stop = np.array(list_frame_stop) + np.array(Timestamp_start)
-    Timestamp_start = fine_tune_timestamp(Timestamp_start,list_frame_stop.tolist())
+    # Timestamp_start = fine_tune_timestamp(Timestamp_start,list_frame_stop.tolist())
     print("Frame stop", list_frame_stop)
     print("Frame start fine-tuned: ", Timestamp_start)
     
@@ -316,7 +317,7 @@ if __name__=='__main__':
             w_merge, h_merge = int(cap_merge.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap_merge.get(cv2.CAP_PROP_FRAME_HEIGHT))
             old_corner = np.array([(0,0),(w_merge,0),(w_merge,h_merge),(0,h_merge)], np.int32)
             old_corner = old_corner.reshape(-1,1,2)
-            new_corners = np.int32(List_points[count_godot_video]*[width,height])
+            new_corners = np.int32(List_points[count_godot_video-1]*[width,height])
             # print(new_corners) 
             M_coor, _ = cv2.findHomography(old_corner, new_corners)
             
@@ -336,11 +337,11 @@ if __name__=='__main__':
             
             while cap_merge.isOpened():
                 ret_merge, frame_merge = cap_merge.read()
-                if not ret_merge and count_godot_video < len(video_captures)-1:
+                if not ret_merge and count_godot_video < len(video_captures):
                     merge_status = False
-                    count_godot_video += 1
+                    # count_godot_video += 1
                     break
-                elif not ret_merge and count_godot_video >= len(video_captures)-1:
+                elif not ret_merge and count_godot_video >= len(video_captures):
                     count_frame +=1
                     print("Writing last part")
                     while  cap.isOpened():
@@ -354,8 +355,7 @@ if __name__=='__main__':
                 ret, frame = cap.read()
                 if not  ret:
                     break
-                count_frame +=1
-                # if count_frame > 400:
+                                # if count_frame > 400:
                 #     break
                 # Scale the imageA
                 # scaled_image = cv2.resize(frame_merge, None, fx=scale[0], fy=scale[1])
@@ -371,6 +371,11 @@ if __name__=='__main__':
                 output_main = blend_images_using_mask(mask_fr,frame,mask)
                 write_frame(output_main,encoder_video)
                 tqdm.update(1)
+                count_frame +=1
+                if count_frame in Timestamp_start:
+                    print("Merging godot video - ", count_godot_video+1 , " - Frame start: ",count_frame)
+                    load_godot_video()
+                    break
             # if count_frame > 400:
             #     break
     cap.release()
@@ -400,7 +405,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+2}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+2}];"
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f"""ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str} {save_path}"""
+            ffmpeg_cmd = f"""sudo ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str} {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -416,7 +421,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f"""ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5"  -c:v copy  {save_path}"""
+            ffmpeg_cmd = f"""sudo ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5"  -c:v copy  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
