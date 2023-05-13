@@ -33,14 +33,14 @@ def ffmpeg_encoder(outfile, fps, width, height):
         vsync="1",
         s='{}x{}'.format(width, height),
         r=fps,
-        hwaccel="cuda",
-        hwaccel_device="0",
-        hwaccel_output_format="cuda",
+        # hwaccel="cuda",
+        # hwaccel_device="0",
+        # hwaccel_output_format="cuda",
         thread_queue_size=1,
     )
 
     if torch.cuda.is_available():
-        codec = "h264_nvenc"
+        codec = "libx264"#"h264_nvenc"
     else:
         codec = "libx264"
     # print("###########33", codec)
@@ -238,9 +238,10 @@ if __name__=='__main__':
     #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
-        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
+        ffmpeg_cmd_main_video_tmp = f"sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} " #
     else:
         ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
+    # print("CMD convert FPS: ", ff)
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
     

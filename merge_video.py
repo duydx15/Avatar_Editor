@@ -35,7 +35,7 @@ def ffmpeg_encoder(outfile, fps, width, height):
         r=fps,
         hwaccel="cuda",
         hwaccel_device="0",
-        hwaccel_output_format="cuda",
+        # hwaccel_output_format="cuda",
         thread_queue_size=1,
     )
 
@@ -243,9 +243,9 @@ if __name__=='__main__':
      #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
-        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
+        ffmpeg_cmd_main_video_tmp = f"sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} " #
     else:
-        ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
+        ffmpeg_cmd_main_video_tmp = f"sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
     
@@ -270,7 +270,7 @@ if __name__=='__main__':
     
     # Define the background color to be removed
     list_frame_stop = np.array(list_frame_stop) + np.array(Timestamp_start)
-    Timestamp_start = fine_tune_timestamp(Timestamp_start,list_frame_stop.tolist())
+    # Timestamp_start = fine_tune_timestamp(Timestamp_start,list_frame_stop.tolist())
     # print("Frame stop", list_frame_stop)
     # print("Frame start fine-tuned: ", Timestamp_start)
     
@@ -282,24 +282,7 @@ if __name__=='__main__':
     
     for cap_merge in video_captures:
         
-        bg_color_file = BG_color_list[count_godot_video]
-        # print("bg_color_list[count_godot_video] ",BG_color_list[count_godot_video])
-        if not os.path.exists(bg_color_file):
-            print(bg_color_file," doesn't exist!")
-            bg_color =(0, 177, 64)
-            # sys.exit()
-        else:
-            with open(bg_color_file,"r") as f:
-                lines = f.readlines()
-                bg_color =ast.literal_eval(lines[0])
-        # print(lines)
-          # black color
-        # Convert the color to HSV format
-        hsv_background_color = cv2.cvtColor(np.uint8([[bg_color]]), cv2.COLOR_RGB2HSV)
-        background_color_hsv = hsv_background_color[0][0]
-        # Define the range of the background color
-        lower_bound = np.array([background_color_hsv[0] - 10, 100, 100])
-        upper_bound = np.array([background_color_hsv[0] + 10, 255, 255])
+        
         if cap_merge == None:
             merge_status = False
                
@@ -321,6 +304,22 @@ if __name__=='__main__':
             # continue
             
         else:
+            bg_color_file = BG_color_list[count_godot_video-1]
+            # print("bg_color_list[count_godot_video] ",BG_color_list[count_godot_video])
+            if not os.path.exists(bg_color_file):
+                print(bg_color_file," doesn't exist!")
+                bg_color =(0, 177, 64)
+            else:
+                with open(bg_color_file,"r") as f:
+                    lines = f.readlines()
+                    bg_color =ast.literal_eval(lines[0])
+            # Convert the color to HSV format
+            hsv_background_color = cv2.cvtColor(np.uint8([[bg_color]]), cv2.COLOR_RGB2HSV)
+            background_color_hsv = hsv_background_color[0][0]
+            # Define the range of the background color
+            lower_bound = np.array([background_color_hsv[0] - 10, 100, 100])
+            upper_bound = np.array([background_color_hsv[0] + 10, 255, 255])
+            
             # Define old corner
             w_merge, h_merge = int(cap_merge.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap_merge.get(cv2.CAP_PROP_FRAME_HEIGHT))
             old_corner = np.array([(0,0),(w_merge,0),(w_merge,h_merge),(0,h_merge)], np.int32)
@@ -410,7 +409,7 @@ if __name__=='__main__':
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""sudo ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
+            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -426,7 +425,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f"""sudo ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
+            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
