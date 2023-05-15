@@ -26,7 +26,10 @@ def ffmpeg_encoder(outfile, fps, width, height):
         "critical": "fatal",
         }
 
-    frames = ffmpeg.input(
+
+    if torch.cuda.is_available():
+        codec = "h264_nvenc"
+        frames = ffmpeg.input(
         "pipe:0",
         format="rawvideo",
         pix_fmt="rgb24",
@@ -38,11 +41,20 @@ def ffmpeg_encoder(outfile, fps, width, height):
         # hwaccel_output_format="cuda",
         thread_queue_size=1,
     )
-
-    if torch.cuda.is_available():
-        codec = "h264_nvenc"
     else:
         codec = "libx264"
+        frames = ffmpeg.input(
+        "pipe:0",
+        format="rawvideo",
+        pix_fmt="rgb24",
+        vsync="1",
+        s='{}x{}'.format(width, height),
+        r=fps,
+        # hwaccel="cuda",
+        # hwaccel_device="0",
+        # hwaccel_output_format="cuda",
+        thread_queue_size=1,
+    )
     # print("###########33", codec)
     encoder_ = subprocess.Popen(
         ffmpeg.compile(
@@ -114,7 +126,7 @@ def convert_coordinates(string, single_list = False):
     if single_list:
         print("single input")
         parts = np.array([parts])
-    print("Length: ", parts)
+    # print("Length: ", parts)
     # Loop through the two parts
     for part in parts:
         # Split each part into its individual coordinates
@@ -222,24 +234,127 @@ def load_godot_video():
     count_godot_video +=1
     # print("Video godot ",count_godot_video +1, " th")
     
+def load_bg_color():
+    global lower_bound, upper_bound,BG_color_list, bg_color_array
+    for idx in range(len(BG_color_list)):
+        bg_color_file = BG_color_list[idx]
+            # print("bg_color_list[count_godot_video] ",BG_color_list[count_godot_video])
+        if not os.path.exists(bg_color_file):
+            print(bg_color_file," doesn't exist!")
+            bg_color =(0, 177, 64)
+        else:
+            with open(bg_color_file,"r") as f:
+                lines = f.readlines()
+                bg_color =ast.literal_eval(lines[0])
+        # Convert the color to HSV format
+        hsv_background_color = cv2.cvtColor(np.uint8([[bg_color]]), cv2.COLOR_RGB2HSV)
+        background_color_hsv = hsv_background_color[0][0]
+        # Define the range of the background color
+        bg_color_array.append( bg_color)
+        lower_bound.append(np.array([background_color_hsv[0] - 10, 100, 100]))
+        upper_bound.append(np.array([background_color_hsv[0] + 10, 255, 255]))
+
+def load_Matrix_coor():
+    global width_base_video,height_base_video, video_captures, List_points, M_coor_total
+    for idx in range(len(video_captures)):
+        if not video_captures[idx] is None:
+            # Define old corner
+            w_merge, h_merge = int(video_captures[idx].get(cv2.CAP_PROP_FRAME_WIDTH)), int(video_captures[idx].get(cv2.CAP_PROP_FRAME_HEIGHT))
+            old_corner = np.array([(0,0),(w_merge,0),(w_merge,h_merge),(0,h_merge)], np.int32)
+            old_corner = old_corner.reshape(-1,1,2)
+            new_corners = np.int32(List_points[idx]*[width_base_video,height_base_video])
+            # print(new_corners) 
+            M_coor, _ = cv2.findHomography(old_corner, new_corners)
+        else:
+            M_coor = None
+        # print(M_coor)
+        M_coor_total.append(M_coor)
+
+def normalize_channels(img, target_channels):
+    img_shape_len = len(img.shape)
+    if img_shape_len == 2:
+        h, w = img.shape
+        c = 0
+    elif img_shape_len == 3:
+        h, w, c = img.shape
+    else:
+        raise ValueError("normalize: incorrect image dimensions.")
+
+    if c == 0 and target_channels > 0:
+        img = img[...,np.newaxis]
+        c = 1
+
+    if c == 1 and target_channels > 1:
+        img = np.repeat (img, target_channels, -1)
+        c = target_channels
+
+    if c > target_channels:
+        img = img[...,0:target_channels]
+        c = target_channels
+
+    return img
+
+def merge_frame(idx):
+    global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures
+    ret_merge, frame_merge = video_captures[idx].read()
+    if not ret_merge:
+        return
+    # print("merge video: ", idx)
+    mask_fr = cv2.inRange(cv2.cvtColor(frame_merge.astype(np.uint8), cv2.COLOR_BGR2HSV), lower_bound[idx], upper_bound[idx]) 
+    # print("mask origin: ", mask_fr.shape)    
+    mask =  cv2.bitwise_not(mask_fr)
+    # print("mask not: ", mask.shape, M_coor_total[idx].shape) 
+    mask_merge = cv2.warpPerspective(mask,M_coor_total[idx],(width_base_video, height_base_video), mask_merge,borderMode=cv2.BORDER_TRANSPARENT)
+    
+    frame_merge = cv2.bitwise_and(frame_merge,frame_merge,mask=mask)
+    frame_merge_final = cv2.warpPerspective(frame_merge,M_coor_total[idx],(width_base_video, height_base_video), frame_merge_final, borderMode=cv2.BORDER_TRANSPARENT)
+    # mask = cv2.GaussianBlur(mask,(1,1),0)
+    
+    # output_main = blend_images_using_mask(mask_fr,frame,mask)
+
+def find_indices(list_to_check, item_to_find):
+    return [idx for idx, value in enumerate(list_to_check) if value == item_to_find]
+
+def update_status(status):
+    global count_frame, merge_status, Timestamp_start, Timestamp_stop, video_captures
+    if status:
+        list_tmp = find_indices(Timestamp_start,count_frame)
+        # print("Time start",count_frame, type(list_tmp), type(Timestamp_start.index(count_frame)))
+        merge_status = [True if i in list_tmp else x for i, x in enumerate(merge_status)]
+        print("change Start", list_tmp)
+    else:
+        list_tmp = find_indices(Timestamp_stop,count_frame)
+        # print("Time start",count_frame, type(list_tmp), type(Timestamp_start.index(count_frame)))
+        merge_status = [False if i in list_tmp else x for i, x in enumerate(merge_status)]
+        # for idx in list_tmp:
+        #     video_captures[idx].release()
+        print("change stop", list_tmp)
+    
+
 
 if __name__=='__main__':
    
-    list_video_path,list_audio_path,video_main_path,list_timestamp,BG_color_list,save_path,List_points,main_volume,avatar_volume = load_cmd_input()
-    
-    list_frame_stop = []
-    # Append multiple godot videos
+    #Define global var
+    bg_color_array = []
+    lower_bound = []
+    upper_bound = []
+    Timestamp_stop = []
     video_captures = []
-    list_timestamp_tmp = [x for x, y in zip(list_timestamp, list_video_path) if y != 'null']
+    M_coor_total = []
+    mask_merge = []
+    frame_merge_final = []
     
+    list_video_path,list_audio_path,video_main_path,list_timestamp,BG_color_list,save_path,List_points,main_volume,avatar_volume = load_cmd_input()
+
+    list_timestamp_tmp = [x for x, y in zip(list_timestamp, list_video_path) if y != 'null']
+     # Append multiple godot videos
     for video_path in list_video_path:
         if video_path != "null":
             video_captures.append(cv2.VideoCapture(video_path))
-            list_frame_stop.append(int(cv2.VideoCapture(video_path).get(cv2.CAP_PROP_FRAME_COUNT)))
+            Timestamp_stop.append(int(cv2.VideoCapture(video_path).get(cv2.CAP_PROP_FRAME_COUNT)))
         else:
             video_captures.append(None)
-            
-    
+      
      #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
@@ -249,11 +364,11 @@ if __name__=='__main__':
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
     
-    cap = cv2.VideoCapture(video_main_path_tmp)
-    # cap = cv2.VideoCapture(video_main_path)
+    # cap = cv2.VideoCapture(video_main_path_tmp)
+    cap = cv2.VideoCapture(video_main_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width_base_video = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height_base_video = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
     path_folder = os.path.dirname(os.path.abspath(save_path))
@@ -261,126 +376,60 @@ if __name__=='__main__':
     # Check exist output_nonsound.mp4
     if os.path.exists(output_nonsound):
         os.remove(output_nonsound)
-    encoder_video = ffmpeg_encoder(output_nonsound, fps,width, height)
+    encoder_video = ffmpeg_encoder(output_nonsound, fps,width_base_video, height_base_video)
     
     #Process timestamp
     Timestamp_start = [int(fps*x) for x in list_timestamp_tmp]
-    print("Timestamp_start: ", Timestamp_start)
+   
     cap_merge = None    
     
+    #Load data merge
+    load_bg_color()
+    load_Matrix_coor()
+    
     # Define the background color to be removed
-    list_frame_stop = np.array(list_frame_stop) + np.array(Timestamp_start)
-    # Timestamp_start = fine_tune_timestamp(Timestamp_start,list_frame_stop.tolist())
-    # print("Frame stop", list_frame_stop)
-    # print("Frame start fine-tuned: ", Timestamp_start)
+    Timestamp_stop = (np.array(Timestamp_stop) + np.array(Timestamp_start)).tolist()
+    print("Timestamp_start: ", Timestamp_start)
+    print("Timestamp_stop: ", Timestamp_stop)
+    # Timestamp_start = fine_tune_timestamp(Timestamp_start,Timestamp_stop.tolist())
     
     # Define count vars
     count_frame = 0
     count_godot_video = 0
-    merge_status = False
+    merge_status = [False] * len(list_video_path)
     tqdm = tqdm(total=total_frames)
     
-    for cap_merge in video_captures:
+    while cap.isOpened():
         
+        ret, frame = cap.read()
+        if not  ret:
+            break   
+        # Update status merge for each video
+        if count_frame in Timestamp_start:
+            update_status(True)
+        if count_frame in Timestamp_stop:
+            update_status(False)
         
-        if cap_merge == None:
-            merge_status = False
-               
-            while not merge_status:
-                    
-                if count_frame in Timestamp_start :
-                    print("Merging godot video - ", count_godot_video+1 , " - Frame start: ",count_frame)
-                    load_godot_video()
-                    break
-                # print("Writing video")
-                ret, frame = cap.read()
-                if not  ret:
-                    break
-                write_frame(frame,encoder_video)
-                tqdm.update(1)
-                count_frame +=1
-                # if count_frame == total_frames:
-                #     break
-            # continue
+        if any(merge_status) is True:
+            frame_merge_final = frame.copy()
+            mask_merge = np.zeros((height_base_video,width_base_video,3),dtype=np.int32)
+            # get list index of merge video are True
+            list_idx = np.where(merge_status)[0]
+            # print("list merges",list_idx)
+            for idx in list_idx:
+                merge_frame(idx)
+            # break
+            output_main = blend_images_using_mask(frame_merge_final,frame,mask_merge)
+            write_frame(output_main,encoder_video)
+            tqdm.update(1)
+            count_frame +=1
             
         else:
-            bg_color_file = BG_color_list[count_godot_video-1]
-            # print("bg_color_list[count_godot_video] ",BG_color_list[count_godot_video])
-            if not os.path.exists(bg_color_file):
-                print(bg_color_file," doesn't exist!")
-                bg_color =(0, 177, 64)
-            else:
-                with open(bg_color_file,"r") as f:
-                    lines = f.readlines()
-                    bg_color =ast.literal_eval(lines[0])
-            # Convert the color to HSV format
-            hsv_background_color = cv2.cvtColor(np.uint8([[bg_color]]), cv2.COLOR_RGB2HSV)
-            background_color_hsv = hsv_background_color[0][0]
-            # Define the range of the background color
-            lower_bound = np.array([background_color_hsv[0] - 10, 100, 100])
-            upper_bound = np.array([background_color_hsv[0] + 10, 255, 255])
+            #write frame base video without any merge
+            write_frame(frame,encoder_video)
+            tqdm.update(1)
+            count_frame +=1
             
-            # Define old corner
-            w_merge, h_merge = int(cap_merge.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap_merge.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            old_corner = np.array([(0,0),(w_merge,0),(w_merge,h_merge),(0,h_merge)], np.int32)
-            old_corner = old_corner.reshape(-1,1,2)
-            new_corners = np.int32(List_points[count_godot_video-1]*[width,height])
-            # print(new_corners) 
-            M_coor, _ = cv2.findHomography(old_corner, new_corners)
-            
-            while not merge_status:
-                    
-                if count_frame in Timestamp_start:
-                    print("Merging godot video - ", count_godot_video+1 , " - Frame start: ",count_frame)
-                    load_godot_video()
-                    break
-                # print("Writing video")
-                ret, frame = cap.read()
-                if not  ret:
-                    break
-                write_frame(frame,encoder_video)
-                tqdm.update(1)
-                count_frame +=1
-            
-            while cap_merge.isOpened():
-                ret_merge, frame_merge = cap_merge.read()
-                if not ret_merge and count_godot_video < len(video_captures):
-                    merge_status = False
-                    # count_godot_video += 1
-                    break
-                elif not ret_merge and count_godot_video >= len(video_captures):
-                    count_frame +=1
-                    print("Writing last part")
-                    while  cap.isOpened():
-                        ret, frame = cap.read()
-                        if not  ret:
-                            break
-                        write_frame(frame,encoder_video)
-                        tqdm.update(1)
-                    break
-                
-                ret, frame = cap.read()
-                if not  ret:
-                    break
-                count_frame +=1
-                # if count_frame > 400:
-                #     break
-                # Scale the imageA
-                # scaled_image = cv2.resize(frame_merge, None, fx=scale[0], fy=scale[1])
-                
-                mask_fr = cv2.warpPerspective(frame_merge,M_coor,(width, height),borderValue=bg_color[::-1] )
-                mask = cv2.inRange(cv2.cvtColor(mask_fr.astype(np.uint8), cv2.COLOR_BGR2HSV), lower_bound, upper_bound)
-                mask =  cv2.bitwise_not(mask)
-                mask = cv2.GaussianBlur(mask,(1,1),0)
-                output_main = blend_images_using_mask(mask_fr,frame,mask)
-                write_frame(output_main,encoder_video)
-                tqdm.update(1)
-                if count_frame in Timestamp_start:
-                    print("Merging godot video - ", count_godot_video+1 , " - Frame start: ",count_frame)
-                    load_godot_video()
-                    break
-            # if count_frame > 400:
-            #     break
     cap.release()
     encoder_video.stdin.flush()
     encoder_video.stdin.close()
@@ -409,7 +458,7 @@ if __name__=='__main__':
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
+            ffmpeg_cmd = f""" /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -425,7 +474,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
+            ffmpeg_cmd = f""" /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
@@ -435,3 +484,4 @@ if __name__=='__main__':
     except Exception:
         print("Can not merge audio to output_video")
         os.rename(output_nonsound,save_path)
+        # /home/ubuntu/anaconda3/envs/gazo/bin/

@@ -11,6 +11,7 @@ import argparse
 import time 
 from collections import Counter
 import torch
+import cv2.cuda
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -33,14 +34,14 @@ def ffmpeg_encoder(outfile, fps, width, height):
         vsync="1",
         s='{}x{}'.format(width, height),
         r=fps,
-        # hwaccel="cuda",
-        # hwaccel_device="0",
+        hwaccel="cuda",
+        hwaccel_device="0",
         # hwaccel_output_format="cuda",
         thread_queue_size=1,
     )
 
     if torch.cuda.is_available():
-        codec = "libx264"#"h264_nvenc"
+        codec = "h264_nvenc"
     else:
         codec = "libx264"
     # print("###########33", codec)
@@ -77,10 +78,9 @@ def ffmpeg_encoder(outfile, fps, width, height):
 def fine_tune_timestamp(list_start,list_stop):
     list_stop = list_stop[:-1]
     list_stop.insert(0,0)
-    # print("~~~",list_stop)
     for i in range(len(list_start)):
         if list_start[i] <= list_stop[i]:
-            list_start[i] = list_stop[i]+1
+            list_start[i] = list_stop[i]+2
     return list_start
 
 def mix_pixel(pix_1, pix_2, perc):
@@ -92,6 +92,72 @@ def blend_images_using_mask(img_orig, img_for_overlay, img_mask):
         img_mask = cv2.cvtColor(img_mask, cv2.COLOR_GRAY2BGR)
     img_res = mix_pixel(img_orig, img_for_overlay, img_mask)
     return img_res.astype(np.uint8)
+
+def mix_images(img1, img2, mask):
+    # Convert images to float32 and move them to GPU
+    img1_gpu = cv2.cuda_GpuMat(cv2.cvtColor(img1, cv2.COLOR_BGR2BGRA).astype(np.float32))
+    img2_gpu = cv2.cuda_GpuMat(cv2.cvtColor(img2, cv2.COLOR_BGR2BGRA).astype(np.float32))
+    
+    # Convert mask to float32 and move it to GPU
+    mask_= cv2.cuda_GpuMat(mask.astype(np.float32) / 255.0)
+    mask_not =  cv2.cuda_GpuMat((1 -mask).astype(np.float32) / 255.0)
+    size = img1_gpu.size()
+    # Blend the images using cv2.cuda.addWeighted
+    blended_gpu = cv2.cuda_GpuMat(cv2.cuda.createContinuous(size[1],size[0], cv2.CV_32FC4))
+    cv2.cuda.addWeighted(img1_gpu, mask_, img2_gpu, mask_not, 0.0, blended_gpu)
+    
+    # Download the blended image from GPU and convert it to uint8
+    blended = blended_gpu.download().astype(np.uint8)
+    blended = cv2.cvtColor(blended, cv2.COLOR_BGRA2BGR)
+    
+    return blended
+
+# def blend_images_using_mask_gpu(img_orig, img_for_overlay, img_mask):
+#     # if len(img_mask.shape) != 3:
+#     #     img_mask_cuda = cv2.cuda_GpuMat(img_mask)
+#     #     img_mask_cuda = cv2.cuda.cvtColor(img_mask_cuda, cv2.COLOR_GRAY2BGR)
+#     #     img_mask = img_mask_cuda.download()
+
+#     img_res_cuda = img_orig#cv2.cuda_GpuMat(img_orig)
+#     img_for_overlay_cuda =img_for_overlay  #cv2.cuda_GpuMat(img_for_overlay)
+
+#     img_res_cuda = cv2.cuda.multiply(img_res_cuda, (255-img_mask)/255)
+#     img_for_overlay_cuda = cv2.cuda.multiply(img_for_overlay_cuda, img_mask/255)
+
+#     img_res_cuda = cv2.cuda.add(img_res_cuda, img_for_overlay_cuda)
+#     img_res = img_res_cuda.download()
+
+#     return img_res.astype(np.uint8)
+
+
+
+def merge_gpu(frame, frame_merge,M_coor,h_merge,w_merge,height,width):
+    # Load the images using cv2.cuda
+    frame_ori_cuda = cv2.cuda_GpuMat(cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA))
+    frame_device = cv2.cuda_GpuMat(cv2.cvtColor(frame_merge, cv2.COLOR_BGR2BGRA))
+    # frame_device.upload(frame_merge)
+    # M_coor_gpu = cv2.cuda_GpuMat(M_coor)
+    # M_coor_device.upload(M_coor)
+    # print("frame_merge_gpu ",type(frame_merge_gpu))
+    mask_gpu = cv2.cuda_GpuMat(cv2.cvtColor(np.ones((h_merge,w_merge,3),dtype=np.float32)*255.0,cv2.COLOR_BGR2BGRA))
+    # print("mask_gpu ", mask_gpu.type())
+    # M_coor_gpu = cv2.cuda_GpuMat(M_coor)
+    # print("M_coor_gpu ",M_coor_device.type())
+    # Use cv2.cuda.warpPerspective to warp the images
+    mask_fr_gpu = cv2.cuda.warpPerspective(frame_device, M_coor, (width, height))
+    mask_gpu = cv2.cuda.warpPerspective(mask_gpu, M_coor, (width, height))
+
+    # print("mask_gpu ", mask_gpu.type())
+    # print("mask_fr_gpu ", mask_fr_gpu.type())
+    # print("frame_ori_cuda ", frame_ori_cuda.type())
+    
+    # # Blend the two images using the mask
+    # result_gpu = cv2.cuda_GpuMat(frame_ori_cuda.size(), frame_ori_cuda.type())
+    # cv2.cuda.addWeighted(mask_fr_gpu, 1.0, frame_ori_cuda, 1.0, 0, result_gpu, mask_gpu)
+    output_main =  mix_images(mask_fr_gpu.download(),frame_ori_cuda.download(),mask_gpu.download())
+    # Blend the images using the GPU function
+    # output_main = blend_images_using_mask(mask_fr_gpu.download(),frame_ori_cuda.download(),mask_gpu.download())
+    return output_main
 
 def add_image_by_mask(img1, img2, mask_):
     mask_not = cv2.bitwise_not(mask_)
@@ -148,17 +214,17 @@ def load_cmd_input():
     
     show_Avatar = args_tmp.show_Avatar
     video_main_path = args_tmp.main_video
-    print("video_main_path: ",video_main_path)
+    # print("video_main_path: ",video_main_path)
     list_video_path = str(args_tmp.godot_videos).split(",")
-    print("list_video_path: ",list_video_path)
+    # print("list_video_path: ",list_video_path)
     list_audio_path = str(args_tmp.list_audio).split(",")
-    print("list_audio_path: ",list_audio_path)
+    # print("list_audio_path: ",list_audio_path)
     list_timestamp = [float(x) for x in args_tmp.timestamp.split(",")]
-    print("list_timestamp: ",list_timestamp)
+    # print("list_timestamp: ",list_timestamp)
     
     # Change perrmission output folder
     save_path = args_tmp.output_path
-    print("save_path: ", save_path)
+    # print("save_path: ", save_path)
     
     path_folder = os.path.dirname(os.path.abspath(save_path))
     if not os.path.exists(path_folder):
@@ -167,10 +233,10 @@ def load_cmd_input():
     # else:
     #     os.chmod(path_folder,mode=0o444)
     bg_color_list = str(args_tmp.color_background).split(",")
-    print("bg_color_list: ", bg_color_list)
+    # print("bg/_color_list: ", bg_color_list)
     
     coordinate_list = convert_coordinates(args_tmp.coordinate, len(list_video_path) ==1)
-    print("coordinate_list: ", coordinate_list)
+    # print("coordinate_list: ", coordinate_list)
     # Check missing args
     lists = {
         "list_video_path":len(list_video_path),
@@ -198,7 +264,7 @@ def load_cmd_input():
         avatar_volume = np.ones(len(list_video_path),dtype=float)*1.5
     else:
         avatar_volume = [float(x)*1.5 for x in avatar_volume.split(",")]
-    print("Avatar_volume: ", avatar_volume, main_volume)
+    # print("Avatar_volume: ", avatar_volume, main_volume)
     
     return list_video_path,list_audio_path,video_main_path,list_timestamp,bg_color_list,save_path,coordinate_list,main_volume,avatar_volume
     
@@ -215,8 +281,8 @@ def find_other_corners(top_left, width, height, X):
 def load_godot_video():
     global cap_merge,count_godot_video,list_video_path, merge_status
     merge_status = True
-    count_godot_video +=1
-    # print("Video godot ",count_godot_video +1, " th")
+    # count_godot_video +=1
+    print("Video godot ",count_godot_video +1, " th")
     
 
 if __name__=='__main__':
@@ -238,16 +304,15 @@ if __name__=='__main__':
     #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
-        ffmpeg_cmd_main_video_tmp = f"sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} " #
+        ffmpeg_cmd_main_video_tmp = f"sudo /home/ubuntu/anaconda3/envs/gazo_test/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} "
     else:
         ffmpeg_cmd_main_video_tmp = f"sudo ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
-    # print("CMD convert FPS: ", ff)
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
     
     cap = cv2.VideoCapture(video_main_path_tmp)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    print("FPS: ", fps)
+    # print("FPS: ", fps)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -276,23 +341,11 @@ if __name__=='__main__':
     merge_status = False
     tqdm = tqdm(total=total_frames)
     
+    # print(cv2.getBuildInformation())
+    # sys.exit()
+    
     for cap_merge in video_captures:
         
-        # bg_color_file = BG_color_list[count_godot_video]
-        # # print("bg_color_list[count_godot_video] ",BG_color_list[count_godot_video])
-        # if not os.path.exists(bg_color_file):
-        #     print(bg_color_file," doesn't exist!")
-        #     sys.exit()
-        # with open(bg_color_file,"r") as f:
-        #     lines = f.readlines()
-        
-        # bg_color =ast.literal_eval(lines[0])  # black color
-        # Convert the color to HSV format
-        # hsv_background_color = cv2.cvtColor(np.uint8([[bg_color]]), cv2.COLOR_RGB2HSV)
-        # background_color_hsv = hsv_background_color[0][0]
-        # # Define the range of the background color
-        # lower_bound = np.array([background_color_hsv[0] - 10, 100, 100])
-        # upper_bound = np.array([background_color_hsv[0] + 10, 255, 255])
         if cap_merge == None:
             merge_status = False
                
@@ -318,7 +371,7 @@ if __name__=='__main__':
             w_merge, h_merge = int(cap_merge.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap_merge.get(cv2.CAP_PROP_FRAME_HEIGHT))
             old_corner = np.array([(0,0),(w_merge,0),(w_merge,h_merge),(0,h_merge)], np.int32)
             old_corner = old_corner.reshape(-1,1,2)
-            new_corners = np.int32(List_points[count_godot_video-1]*[width,height])
+            new_corners = np.int32(List_points[count_godot_video]*[width,height])
             # print(new_corners) 
             M_coor, _ = cv2.findHomography(old_corner, new_corners)
             
@@ -338,11 +391,11 @@ if __name__=='__main__':
             
             while cap_merge.isOpened():
                 ret_merge, frame_merge = cap_merge.read()
-                if not ret_merge and count_godot_video < len(video_captures):
+                if not ret_merge and count_godot_video < len(video_captures)-1:
                     merge_status = False
-                    # count_godot_video += 1
+                    count_godot_video += 1
                     break
-                elif not ret_merge and count_godot_video >= len(video_captures):
+                elif not ret_merge and count_godot_video >= len(video_captures)-1:
                     count_frame +=1
                     print("Writing last part")
                     while  cap.isOpened():
@@ -356,27 +409,24 @@ if __name__=='__main__':
                 ret, frame = cap.read()
                 if not  ret:
                     break
-                                # if count_frame > 400:
+                count_frame +=1
+                # if count_frame > 400:
                 #     break
                 # Scale the imageA
                 # scaled_image = cv2.resize(frame_merge, None, fx=scale[0], fy=scale[1])
-                
-                mask_fr = cv2.warpPerspective(frame_merge,M_coor,(width, height))
-                
-                # # mask = cv2.inRange(cv2.cvtColor(mask_fr.astype(np.uint8), cv2.COLOR_BGR2HSV), lower_bound, upper_bound)
-                # mask = np.ones((height,width,3),dtype=np.int32)*255
-                mask = np.ones((h_merge,w_merge,3),dtype=float)*255.0
-                mask = cv2.warpPerspective(mask,M_coor,(width, height))
-                # mask =  cv2.bitwise_not(mask)
-                # mask = cv2.GaussianBlur(mask,(1,1),0)
-                output_main = blend_images_using_mask(mask_fr,frame,mask)
+                if torch.cuda.is_available():
+                    output_main = merge_gpu(frame, frame_merge,M_coor,h_merge,w_merge,height,width)
+                else:
+                    mask_fr = cv2.warpPerspective(frame_merge,M_coor,(width, height))
+                    # # mask = cv2.inRange(cv2.cvtColor(mask_fr.astype(np.uint8), cv2.COLOR_BGR2HSV), lower_bound, upper_bound)
+                    # mask = np.ones((height,width,3),dtype=np.int32)*255
+                    mask = np.ones((h_merge,w_merge,3),dtype=float)*255.0
+                    mask = cv2.warpPerspective(mask,M_coor,(width, height))
+                    # mask =  cv2.bitwise_not(mask)
+                    # mask = cv2.GaussianBlur(mask,(1,1),0)
+                    output_main = blend_images_using_mask(mask_fr,frame,mask)
                 write_frame(output_main,encoder_video)
                 tqdm.update(1)
-                count_frame +=1
-                if count_frame in Timestamp_start:
-                    print("Merging godot video - ", count_godot_video+1 , " - Frame start: ",count_frame)
-                    load_godot_video()
-                    break
             # if count_frame > 400:
             #     break
     cap.release()

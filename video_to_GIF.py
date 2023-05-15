@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
-import ffmpeg
 import subprocess
 from tqdm import tqdm
 import ast
 import sys
+# sys.path.append('/home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg')
+# import ffmpeg
 from PIL import Image
 import os
 import argparse
@@ -12,7 +13,19 @@ import time
 from collections import Counter
 import torch
 
+# set the path to the ffmpeg binary
+# ffmpeg_path = "/home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg"
+# add the path to the FFMPEG_BINARY environment variable
+# os.environ["ffmpeg"] = ffmpeg_path
+# from pathlib import Path
 
+# Add path of directory containing ffmpeg to the system's PATH environment variable
+# ffmpeg_dir = Path("/home/ubuntu/anaconda3/envs/gazo/bin/")
+# sys.path.append(str(ffmpeg_dir))
+
+# Import ffmpeg
+import ffmpeg
+print("FFmpeg path import: ",ffmpeg.__file__)
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 def ffmpeg_encoder(outfile, fps, width, height):
@@ -37,8 +50,8 @@ def ffmpeg_encoder(outfile, fps, width, height):
         r=fps,
         hwaccel="cuda",
         hwaccel_device="0",
-        hwaccel_output_format="cuda",
-        # thread_queue_size=1,
+        # hwaccel_output_format="cuda",
+        thread_queue_size=1,
     )
         codec = "h264_nvenc"
     else:
@@ -52,7 +65,7 @@ def ffmpeg_encoder(outfile, fps, width, height):
         # hwaccel="cuda",
         # hwaccel_device="0",
         # hwaccel_output_format="cuda",
-        # thread_queue_size=1,
+        thread_queue_size=1,
     )
         codec = "libx264"
     # print("###########33", codec)
@@ -66,7 +79,7 @@ def ffmpeg_encoder(outfile, fps, width, height):
                 vcodec=codec,
                 acodec="copy",
                 r=fps,
-                crf=17,
+                # crf=17,
                 vsync="1",
                 # async=4,
             )
@@ -188,7 +201,8 @@ def load_godot_video():
     
 
 if __name__=='__main__':
-   
+    
+    # os.system(f""" ffmpeg -i""")
     video_main_path,BG_color_list,save_path = load_cmd_input()
     
      #preprocessing main video
