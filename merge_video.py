@@ -66,9 +66,6 @@ def ffmpeg_encoder(outfile, fps, width, height):
                 # vcodec="libx264",
                 vcodec=codec,
                 acodec="copy",
-                # hwaccel="cuda",
-                # hwaccel_device="0",
-                # hwaccel_output_format="cuda",
                 r=fps,
                 # crf=17,
                 vsync="1",
@@ -138,7 +135,6 @@ def convert_coordinates(string, single_list = False):
     if single_list:
         print("single input")
         parts = np.array([parts])
-    # print("Length: ", parts)
     # Loop through the two parts
     for part in parts:
         # Split each part into its individual coordinates
@@ -170,11 +166,16 @@ def load_cmd_input():
     parser.add_argument('--show_Avatar', default="True")
     parser.add_argument('--main_volume', default=1.0)
     parser.add_argument('--avatar_volume', default="")
+    parser.add_argument('--resolution', default='')
+    parser.add_argument('--ratio', default="")
+    
     args_tmp = parser.parse_args()
     
     show_Avatar = args_tmp.show_Avatar
     video_main_path = args_tmp.main_video
-        
+    ratio_final = args_tmp.ratio
+    res_final = args_tmp.resolution
+    
     print("video_main_path: ",video_main_path)
     list_video_path = str(args_tmp.godot_videos).split(",")
     print("list_video_path: ",list_video_path)
@@ -228,18 +229,10 @@ def load_cmd_input():
         avatar_volume = [float(x)*1.5 for x in avatar_volume.split(",")]
     print("Avatar_volume: ", avatar_volume, main_volume)
     
-    return list_video_path,list_audio_path,video_main_path,list_timestamp,bg_color_list,save_path,coordinate_list,main_volume,avatar_volume
+    return list_video_path,list_audio_path,video_main_path,\
+            list_timestamp,bg_color_list,save_path,coordinate_list,\
+            main_volume,avatar_volume,ratio_final, res_final
     
-def find_other_corners(top_left, width, height, X):
-    # angle = X * np.pi / 180
-    a = top_left
-    angle = np.deg2rad(-X) # Convert angle to radians
-    top_right = (top_left[0] + width * np.cos(angle), top_left[1] + width * np.sin(angle))
-    bottom_right = (top_right[0] - height * np.sin(angle), top_right[1] + height * np.cos(angle))
-    bottom_left = (top_left[0] - height * np.sin(angle), top_left[1] + height * np.cos(angle))
-    
-    return [a,top_right, bottom_right, bottom_left]
-
 def load_godot_video():
     global cap_merge,count_godot_video,list_video_path, merge_status
     merge_status = True
@@ -250,7 +243,6 @@ def load_bg_color():
     global lower_bound, upper_bound,BG_color_list, bg_color_array
     for idx in range(len(BG_color_list)):
         bg_color_file = BG_color_list[idx]
-            # print("bg_color_list[count_godot_video] ",BG_color_list[count_godot_video])
         if not os.path.exists(bg_color_file):
             print(bg_color_file," doesn't exist!")
             bg_color =(0, 177, 64)
@@ -279,32 +271,8 @@ def load_Matrix_coor():
             M_coor, _ = cv2.findHomography(old_corner, new_corners)
         else:
             M_coor = None
-        # print(M_coor)
         M_coor_total.append(M_coor)
 
-def normalize_channels(img, target_channels):
-    img_shape_len = len(img.shape)
-    if img_shape_len == 2:
-        h, w = img.shape
-        c = 0
-    elif img_shape_len == 3:
-        h, w, c = img.shape
-    else:
-        raise ValueError("normalize: incorrect image dimensions.")
-
-    if c == 0 and target_channels > 0:
-        img = img[...,np.newaxis]
-        c = 1
-
-    if c == 1 and target_channels > 1:
-        img = np.repeat (img, target_channels, -1)
-        c = target_channels
-
-    if c > target_channels:
-        img = img[...,0:target_channels]
-        c = target_channels
-
-    return img
 
 def merge_frame_gpu(idx):
     global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures
@@ -316,34 +284,20 @@ def merge_frame_gpu(idx):
     mask_fr = cv2.cuda.inRange(cv2.cuda_GpuMat(cv2.cvtColor(frame_merge.astype(np.uint8), cv2.COLOR_BGR2HSV)), lower_bound[idx].tolist(),upper_bound[idx].tolist())#lower_bound[idx], upper_bound[idx]) #.astype(np.uint8), cv2.COLOR_BGR2HSV)
     mask_fr = cv2.cuda.bitwise_not(mask_fr)
     mask_tmp = cv2.cuda.warpPerspective(mask_fr,M_coor_total[idx],(width_base_video, height_base_video))
-    # print("type: ", mask_merge.type(), mask_tmp.type(), mask_gpu.type())
     cv2.cuda.add(mask_merge,mask_tmp ,mask_merge)
-    # frame_merge = cv2.cuda.bitwise_and(frame_merge_gpu,frame_merge_gpu,mask=mask)
     frame_merge_tmp = cv2.cuda.warpPerspective(frame_merge_gpu,M_coor_total[idx],(width_base_video, height_base_video))
-    # frame_merge_tmp = cv2.cuda.bitwise_and(frame_merge_tmp,frame_merge_tmp,mask_tmp)
-    # cv2.imwrite("Mask_merge.png",mask_merge.download())
-    # mask_gpu = cv2.cuda_GpuMat(np.ones((height_base_video,width_base_video,3),dtype=np.uint8)*255)
-    # print("type: ", frame_merge_final.type(), frame_merge_tmp.type(), mask_gpu.type())
     frame_merge_final =cv2.cuda.add(frame_merge_final,frame_merge_tmp)
-    # cv2.imwrite("Frame_final.png",frame_merge_final.download())
 
 def merge_frame(idx):
     global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures
     ret_merge, frame_merge = video_captures[idx].read()
     if not ret_merge:
         return
-    # print("merge video: ", idx)
     mask_fr = cv2.inRange(cv2.cvtColor(frame_merge.astype(np.uint8), cv2.COLOR_BGR2HSV), lower_bound[idx], upper_bound[idx]) 
-    # print("mask origin: ", mask_fr.shape)    
     mask =  cv2.bitwise_not(mask_fr)
-    # print("mask not: ", mask.shape, M_coor_total[idx].shape) 
     mask_tmp = cv2.warpPerspective(mask,M_coor_total[idx],(width_base_video, height_base_video), mask_merge,borderMode=cv2.BORDER_TRANSPARENT)
-    
     frame_merge = cv2.bitwise_and(frame_merge,frame_merge,mask=mask)
     frame_merge_final = cv2.warpPerspective(frame_merge,M_coor_total[idx],(width_base_video, height_base_video), frame_merge_final, borderMode=cv2.BORDER_TRANSPARENT)
-    # mask = cv2.GaussianBlur(mask,(1,1),0)
-    
-    # output_main = blend_images_using_mask(mask_fr,frame,mask)
 
 def find_indices(list_to_check, item_to_find):
     return [idx for idx, value in enumerate(list_to_check) if value == item_to_find]
@@ -354,17 +308,31 @@ def update_status(status):
         list_tmp = find_indices(Timestamp_start,count_frame)
         # print("Time start",count_frame, type(list_tmp), type(Timestamp_start.index(count_frame)))
         merge_status = [True if i in list_tmp else x for i, x in enumerate(merge_status)]
-        print("change Start", list_tmp)
+        print("change Start", list_tmp, merge_status)
     else:
         list_tmp = find_indices(Timestamp_stop,count_frame)
         # print("Time start",count_frame, type(list_tmp), type(Timestamp_start.index(count_frame)))
         merge_status = [False if i in list_tmp else x for i, x in enumerate(merge_status)]
-        # for idx in list_tmp:
-        #     video_captures[idx].release()
-        print("change stop", list_tmp)
+        print("change stop", list_tmp, merge_status)
     
-
-
+def check_res_final(ratio_, res_):
+    scaled_res = [0,0] #(witdh, height)
+    if ratio_ =="" or res_ == "":
+        print(f"""Empty {"ratio" if ratio_ == "" else "resolution" } input""")
+        return ['',''] 
+    res_ = int(res_)
+    if ratio_ == "9:16":
+        scaled_res[0] = int(res_)
+        scaled_tmp = int(res_*16/9) 
+        scaled_res[1] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
+    else:
+        ratio_ = ratio_.split(':')
+        ratio_ = list(map(int, ratio_))
+        scaled_res[1] = res_
+        scaled_tmp = int(res_*ratio_[0]/ratio_[1])
+        scaled_res[0] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
+    return scaled_res
+        
 if __name__=='__main__':
    
     #Define global var
@@ -377,9 +345,10 @@ if __name__=='__main__':
     mask_merge = []
     frame_merge_final = []
     
-    list_video_path,list_audio_path,video_main_path,list_timestamp,BG_color_list,save_path,List_points,main_volume,avatar_volume = load_cmd_input()
-
+    list_video_path,list_audio_path,video_main_path,list_timestamp,\
+    BG_color_list,save_path,List_points,main_volume,avatar_volume,ratio_final, res_final = load_cmd_input()
     list_timestamp_tmp = [x for x, y in zip(list_timestamp, list_video_path) if y != 'null']
+
      # Append multiple godot videos
     for video_path in list_video_path:
         if video_path != "null":
@@ -387,13 +356,22 @@ if __name__=='__main__':
             Timestamp_stop.append(int(cv2.VideoCapture(video_path).get(cv2.CAP_PROP_FRAME_COUNT)))
         else:
             video_captures.append(None)
-      
+    
+    scale_output = check_res_final(ratio_final,res_final)
+    
      #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
-        ffmpeg_cmd_main_video_tmp = f"sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} " #
+        if scale_output[0] == '':
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf fps=25 -vcodec h264_nvenc {video_main_path_tmp} """ #
+        else:
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "scale={scale_output[0]}:{scale_output[1]},setsar=1:1,fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """ #
     else:
-        ffmpeg_cmd_main_video_tmp = f"sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} "
+        if scale_output[0] == '':
+            ffmpeg_cmd_main_video_tmp = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
+        else:
+            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {video_main_path} -vf "scale={scale_output[0]}:{scale_output[1]},setsar=1:1,fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
+    print("FFMPEG COMMAND: ",ffmpeg_cmd_main_video_tmp)
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
     
@@ -403,7 +381,7 @@ if __name__=='__main__':
     width_base_video = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height_base_video = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
+    # print("#################", width_base_video, height_base_video)
     path_folder = os.path.dirname(os.path.abspath(save_path))
     output_nonsound = os.path.join(path_folder,"output_nonsound.mp4")
     # Check exist output_nonsound.mp4
@@ -413,13 +391,11 @@ if __name__=='__main__':
     
     #Process timestamp
     Timestamp_start = [int(fps*x) for x in list_timestamp_tmp]
-   
     cap_merge = None    
     
     #Load data merge
     load_bg_color()
     load_Matrix_coor()
-    
     # Define the background color to be removed
     Timestamp_stop = (np.array(Timestamp_stop) + np.array(Timestamp_start)).tolist()
     print("Timestamp_start: ", Timestamp_start)
@@ -442,8 +418,9 @@ if __name__=='__main__':
             update_status(True)
         if count_frame in Timestamp_stop:
             update_status(False)
-        
+        # print(any(merge_status)
         if any(merge_status) is True:
+            
             if torch.cuda.is_available(): 
                 
                 frame_merge_final = cv2.cuda_GpuMat(np.zeros((height_base_video,width_base_video,3),dtype=np.uint8))
@@ -452,25 +429,14 @@ if __name__=='__main__':
                 list_idx = np.where(merge_status)[0]
                 for idx in list_idx:
                     merge_frame_gpu(idx)
-                # break 
-                # mask_merge = mask_merge.download().astype(np.uint8)
-                # mask_merge[mask_merge>0] =255
-                # output_main = blend_images_using_mask(frame_merge_final.download(),frame,mask_merge.download())
                 output_main = add_image_by_mask_gpu(frame_merge_final,cv2.cuda_GpuMat(frame),mask_merge)
-                # cv2.imwrite("Frame_final.png",output_main)
-                # break
             else:
-                # print("cpu")
                 frame_merge_final = frame.copy()
                 mask_merge = np.zeros((height_base_video,width_base_video),dtype=np.uint8)
                 # get list index of merge video are True
                 list_idx = np.where(merge_status)[0]
-                # print("list merges",list_idx)
                 for idx in list_idx:
                     merge_frame(idx)
-                #     break
-                # break
-                # print("type: ", frame_merge_final.dtype,  mask_merge.dtype)
                 output_main = add_image_by_mask(frame_merge_final,frame,mask_merge)
                 # output_main = blend_images_using_mask(frame_merge_final,frame,mask_merge)
             write_frame(output_main,encoder_video)
@@ -478,6 +444,7 @@ if __name__=='__main__':
             count_frame +=1
             
         else:
+            
             #write frame base video without any merge
             write_frame(frame,encoder_video)
             tqdm.update(1)
@@ -511,7 +478,7 @@ if __name__=='__main__':
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
+            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -527,7 +494,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
+            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
