@@ -120,7 +120,7 @@ def add_image_by_mask_gpu(img1, img2, mask_):
     
     img1_mask_only = cv2.cuda.bitwise_not(img1,  mask=mask_)
     cv2.cuda.bitwise_not(img1_mask_only, img1_mask_only, mask=mask_)
-    return cv2.cuda.add(img2_no_mask, img1_mask_only).download()
+    return cv2.cuda.add(img2_no_mask, img1_mask_only)#.download()
 
 def write_frame(images,encoder_video):
     image_draw = cv2.cvtColor(images,cv2.COLOR_RGB2BGR)
@@ -276,6 +276,9 @@ def load_Matrix_coor():
 
 def merge_frame_gpu(idx):
     global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures
+    
+    if video_captures[idx] == None:
+        return
     ret_merge, frame_merge = video_captures[idx].read()
     if not ret_merge:
         return
@@ -284,12 +287,15 @@ def merge_frame_gpu(idx):
     mask_fr = cv2.cuda.inRange(cv2.cuda_GpuMat(cv2.cvtColor(frame_merge.astype(np.uint8), cv2.COLOR_BGR2HSV)), lower_bound[idx].tolist(),upper_bound[idx].tolist())#lower_bound[idx], upper_bound[idx]) #.astype(np.uint8), cv2.COLOR_BGR2HSV)
     mask_fr = cv2.cuda.bitwise_not(mask_fr)
     mask_tmp = cv2.cuda.warpPerspective(mask_fr,M_coor_total[idx],(width_base_video, height_base_video))
-    cv2.cuda.add(mask_merge,mask_tmp ,mask_merge)
+    # cv2.cuda.add(mask_merge,mask_tmp ,mask_merge)
     frame_merge_tmp = cv2.cuda.warpPerspective(frame_merge_gpu,M_coor_total[idx],(width_base_video, height_base_video))
-    frame_merge_final =cv2.cuda.add(frame_merge_final,frame_merge_tmp)
+    # frame_merge_final =cv2.cuda.add(frame_merge_final,frame_merge_tmp)
+    frame_merge_final = add_image_by_mask_gpu(frame_merge_tmp,frame_merge_final,mask_tmp)
 
 def merge_frame(idx):
     global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures
+    if video_captures[idx] == None:
+        return
     ret_merge, frame_merge = video_captures[idx].read()
     if not ret_merge:
         return
@@ -356,6 +362,7 @@ if __name__=='__main__':
             Timestamp_stop.append(int(cv2.VideoCapture(video_path).get(cv2.CAP_PROP_FRAME_COUNT)))
         else:
             video_captures.append(None)
+            Timestamp_stop.append(0)
     
     scale_output = check_res_final(ratio_final,res_final)
     
@@ -363,7 +370,7 @@ if __name__=='__main__':
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf fps=25 -vcodec h264_nvenc {video_main_path_tmp} """ #
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """ #
         else:
             ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "scale={scale_output[0]}:{scale_output[1]},setsar=1:1,fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """ #
     else:
@@ -390,12 +397,13 @@ if __name__=='__main__':
     encoder_video = ffmpeg_encoder(output_nonsound, fps,width_base_video, height_base_video)
     
     #Process timestamp
-    Timestamp_start = [int(fps*x) for x in list_timestamp_tmp]
+    Timestamp_start = [int(fps*x) for x in list_timestamp]
     cap_merge = None    
     
     #Load data merge
     load_bg_color()
     load_Matrix_coor()
+    print("Timestamp_stop before: ", Timestamp_stop)
     # Define the background color to be removed
     Timestamp_stop = (np.array(Timestamp_stop) + np.array(Timestamp_start)).tolist()
     print("Timestamp_start: ", Timestamp_start)
@@ -423,13 +431,13 @@ if __name__=='__main__':
             
             if torch.cuda.is_available(): 
                 
-                frame_merge_final = cv2.cuda_GpuMat(np.zeros((height_base_video,width_base_video,3),dtype=np.uint8))
-                mask_merge = cv2.cuda_GpuMat( np.zeros((height_base_video,width_base_video),dtype=np.uint8))
+                frame_merge_final = cv2.cuda_GpuMat(frame)#np.zeros((height_base_video,width_base_video,3),dtype=np.uint8))
+                # mask_merge = cv2.cuda_GpuMat( np.zeros((height_base_video,width_base_video),dtype=np.uint8))
                 # get list index of merge video are True
                 list_idx = np.where(merge_status)[0]
                 for idx in list_idx:
                     merge_frame_gpu(idx)
-                output_main = add_image_by_mask_gpu(frame_merge_final,cv2.cuda_GpuMat(frame),mask_merge)
+                output_main = frame_merge_final.download()# add_image_by_mask_gpu(frame_merge_final,cv2.cuda_GpuMat(frame),mask_merge)
             else:
                 frame_merge_final = frame.copy()
                 mask_merge = np.zeros((height_base_video,width_base_video),dtype=np.uint8)
@@ -499,7 +507,7 @@ if __name__=='__main__':
             os.system(ffmpeg_cmd)
             
         print("######### COMPLETED  #########")
-        # time.sleep(1)
+        time.sleep(1)
         os.remove(output_nonsound)        
     except Exception:
         print("Can not merge audio to output_video")
