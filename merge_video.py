@@ -150,10 +150,7 @@ def load_cmd_input():
     list_video_path = None
     video_main_path = None
     list_timestamp = None
-    list_rotation = None
     save_path = None
-    list_scale = None
-    list_position = None
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--main_video', default="")
@@ -168,6 +165,7 @@ def load_cmd_input():
     parser.add_argument('--avatar_volume', default="")
     parser.add_argument('--resolution', default='')
     parser.add_argument('--ratio', default="")
+    parser.add_argument('--crop_to_fit', default=True)
     
     args_tmp = parser.parse_args()
     
@@ -175,6 +173,7 @@ def load_cmd_input():
     video_main_path = args_tmp.main_video
     ratio_final = args_tmp.ratio
     res_final = args_tmp.resolution
+    crop_to_fit = eval(args_tmp.crop_to_fit)
     
     print("video_main_path: ",video_main_path)
     list_video_path = str(args_tmp.godot_videos).split(",")
@@ -231,7 +230,7 @@ def load_cmd_input():
     
     return list_video_path,list_audio_path,video_main_path,\
             list_timestamp,bg_color_list,save_path,coordinate_list,\
-            main_volume,avatar_volume,ratio_final, res_final
+            main_volume,avatar_volume,ratio_final, res_final,crop_to_fit
     
 def load_godot_video():
     global cap_merge,count_godot_video,list_video_path, merge_status
@@ -352,7 +351,8 @@ if __name__=='__main__':
     frame_merge_final = []
     
     list_video_path,list_audio_path,video_main_path,list_timestamp,\
-    BG_color_list,save_path,List_points,main_volume,avatar_volume,ratio_final, res_final = load_cmd_input()
+    BG_color_list,save_path,List_points,main_volume,avatar_volume,\
+    ratio_final, res_final,crop_to_fit = load_cmd_input()
     list_timestamp_tmp = [x for x, y in zip(list_timestamp, list_video_path) if y != 'null']
 
      # Append multiple godot videos
@@ -366,18 +366,25 @@ if __name__=='__main__':
     
     scale_output = check_res_final(ratio_final,res_final)
     
+    # prepare -vf sequence for scaling video
+    if crop_to_fit:
+        vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=increase, crop={scale_output[0]}:{scale_output[1]}"""
+    else:
+        vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
+    
+    
      #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
             ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """ #
         else:
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "scale={scale_output[0]}:{scale_output[1]},setsar=1:1,fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """ #
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """ #
     else:
         if scale_output[0] == '':
             ffmpeg_cmd_main_video_tmp = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {video_main_path} -vf "scale={scale_output[0]}:{scale_output[1]},setsar=1:1,fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
     print("FFMPEG COMMAND: ",ffmpeg_cmd_main_video_tmp)
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
@@ -403,7 +410,7 @@ if __name__=='__main__':
     #Load data merge
     load_bg_color()
     load_Matrix_coor()
-    print("Timestamp_stop before: ", Timestamp_stop)
+    # print("Timestamp_stop before: ", Timestamp_stop)
     # Define the background color to be removed
     Timestamp_stop = (np.array(Timestamp_stop) + np.array(Timestamp_start)).tolist()
     print("Timestamp_start: ", Timestamp_start)
