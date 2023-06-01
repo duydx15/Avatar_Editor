@@ -165,7 +165,7 @@ def load_cmd_input():
     parser.add_argument('--avatar_volume', default="")
     parser.add_argument('--resolution', default='')
     parser.add_argument('--ratio', default="")
-    parser.add_argument('--crop_to_fit', default=True)
+    parser.add_argument('--crop_to_fit', default="True")
     
     args_tmp = parser.parse_args()
     
@@ -258,15 +258,30 @@ def load_bg_color():
         upper_bound.append(np.array([background_color_hsv[0] + 10, 255, 255],dtype=np.uint8))
 
 def load_Matrix_coor():
-    global width_base_video,height_base_video, video_captures, List_points, M_coor_total
+    global width_base_video,height_base_video, video_captures, List_points, M_coor_total,ratio_final
+    default_bg = [1920.0,1080.0]
+    #check ratio and get width, height tmp
+    if ratio_final == "16:9":
+        size_tmp = [1920.0,1080.0]
+    elif ratio_final == "9:16":
+        size_tmp = [608.0,1080.0]
+    elif ratio_final == "1:1":
+        size_tmp = [1080.0,1080.0]
+    
     for idx in range(len(video_captures)):
         if not video_captures[idx] is None:
             # Define old corner
             w_merge, h_merge = int(video_captures[idx].get(cv2.CAP_PROP_FRAME_WIDTH)), int(video_captures[idx].get(cv2.CAP_PROP_FRAME_HEIGHT))
             old_corner = np.array([(0,0),(w_merge,0),(w_merge,h_merge),(0,h_merge)], np.int32)
             old_corner = old_corner.reshape(-1,1,2)
-            new_corners = np.int32(List_points[idx]*[width_base_video,height_base_video])
-            # print(new_corners) 
+            #                   --------- default coors -------------------     ------------------------ leftovers coors -----------------------------------
+            new_corners_tmp = List_points[idx]*[default_bg[0],default_bg[1]]
+            
+            # print("ori coors ",new_corners_tmp) 
+            new_corners_tmp = new_corners_tmp - [float(default_bg[0]-size_tmp[0])/2,float(default_bg[1]-size_tmp[1])/2]
+            # print("temp coors ",new_corners_tmp) 
+            new_corners = new_corners_tmp*[width_base_video/size_tmp[0],height_base_video/size_tmp[1]] # normalized coors 
+            # print("final coors ",new_corners) 
             M_coor, _ = cv2.findHomography(old_corner, new_corners)
         else:
             M_coor = None
@@ -373,7 +388,7 @@ if __name__=='__main__':
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
     
     
-     #preprocessing main video
+    #  #preprocessing main video
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
@@ -403,13 +418,16 @@ if __name__=='__main__':
         os.remove(output_nonsound)
     encoder_video = ffmpeg_encoder(output_nonsound, fps,width_base_video, height_base_video)
     
-    #Process timestamp
+    # #Process timestamp
     Timestamp_start = [int(fps*x) for x in list_timestamp]
     cap_merge = None    
+    # width_base_video = scale_output[0]
+    # height_base_video = scale_output[1]
     
-    #Load data merge
+    # Load data merge
     load_bg_color()
     load_Matrix_coor()
+    # sys.exit()
     # print("Timestamp_stop before: ", Timestamp_stop)
     # Define the background color to be removed
     Timestamp_stop = (np.array(Timestamp_stop) + np.array(Timestamp_start)).tolist()
