@@ -223,9 +223,9 @@ def load_cmd_input():
     avatar_volume = args_tmp.avatar_volume
     main_volume = float(main_volume)
     if avatar_volume == "":
-        avatar_volume = np.ones(len(list_video_path),dtype=float)*1.5
+        avatar_volume = np.ones(len(list_video_path),dtype=float)*1.08
     else:
-        avatar_volume = [float(x)*1.5 for x in avatar_volume.split(",")]
+        avatar_volume = [float(x)*1.08 for x in avatar_volume.split(",")]
     print("Avatar_volume: ", avatar_volume, main_volume)
     
     return list_video_path,list_audio_path,video_main_path,\
@@ -392,14 +392,14 @@ if __name__=='__main__':
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """ #
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """ #
         else:
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """ #
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """ #
     else:
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
     print("FFMPEG COMMAND: ",ffmpeg_cmd_main_video_tmp)
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
@@ -495,7 +495,7 @@ if __name__=='__main__':
     # Check exist main_audio.mp4
     if os.path.exists(main_audio):
         os.remove(main_audio)
-    os.system(f""" ffmpeg -y -i {video_main_path} -q:a 0 -map a {main_audio}""")
+    os.system(f""" ffmpeg  -y -i {video_main_path} -q:a 0 -map a {main_audio}""")
     # Merge audio
     time.sleep(3)
     try:
@@ -511,7 +511,7 @@ if __name__=='__main__':
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=2.5" -c:v copy {map_str}  {save_path}"""
+            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1}" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -527,7 +527,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=2.5" -c:v copy  {save_path}"""
+            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)}" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
