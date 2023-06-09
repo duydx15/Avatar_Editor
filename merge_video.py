@@ -217,7 +217,7 @@ def load_cmd_input():
     if len(unique_lengths) > 1:
         different_length = next(name for name, length in lists.items() if length != most_frequent[0])
         print(f"The list {different_length} has a different length, expected: ",most_frequent[0])
-        sys.exit()
+        # sys.exit()
     
     main_volume = args_tmp.main_volume
     avatar_volume = args_tmp.avatar_volume
@@ -290,7 +290,7 @@ def load_Matrix_coor():
 
 
 def merge_frame_gpu(idx):
-    global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures
+    global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures, bg_color_array
     
     if video_captures[idx] == None:
         return
@@ -299,11 +299,12 @@ def merge_frame_gpu(idx):
         return
     frame_merge_gpu = cv2.cuda_GpuMat(frame_merge)
     # print("type: ", lower_bound[idx].tolist(),type(lower_bound[idx].tolist()), type([ 61,100, 100]))
-    mask_fr = cv2.cuda.inRange(cv2.cuda_GpuMat(cv2.cvtColor(frame_merge.astype(np.uint8), cv2.COLOR_BGR2HSV)), lower_bound[idx].tolist(),upper_bound[idx].tolist())#lower_bound[idx], upper_bound[idx]) #.astype(np.uint8), cv2.COLOR_BGR2HSV)
-    mask_fr = cv2.cuda.bitwise_not(mask_fr)
-    mask_tmp = cv2.cuda.warpPerspective(mask_fr,M_coor_total[idx],(width_base_video, height_base_video))
+    # mask_tmp = cv2.cuda.warpPerspective(mask_fr,M_coor_total[idx],(width_base_video, height_base_video))
     # cv2.cuda.add(mask_merge,mask_tmp ,mask_merge)
-    frame_merge_tmp = cv2.cuda.warpPerspective(frame_merge_gpu,M_coor_total[idx],(width_base_video, height_base_video))
+    frame_merge_tmp = cv2.cuda.warpPerspective(frame_merge_gpu,M_coor_total[idx],(width_base_video, height_base_video),borderValue=bg_color_array[idx][::-1])
+    mask_fr = cv2.cuda.inRange(cv2.cuda_GpuMat(cv2.cvtColor(frame_merge_tmp.download().astype(np.uint8), cv2.COLOR_BGR2HSV)), lower_bound[idx].tolist(),upper_bound[idx].tolist())#lower_bound[idx], upper_bound[idx]) #.astype(np.uint8), cv2.COLOR_BGR2HSV)
+    mask_tmp = cv2.cuda.bitwise_not(mask_fr)
+    # cv2.imwrite("./Test_warp.png",frame_merge_tmp.download())
     # frame_merge_final =cv2.cuda.add(frame_merge_final,frame_merge_tmp)
     frame_merge_final = add_image_by_mask_gpu(frame_merge_tmp,frame_merge_final,mask_tmp)
 
@@ -486,6 +487,9 @@ if __name__=='__main__':
                 list_idx = np.where(merge_status)[0]
                 for idx in list_idx:
                     merge_frame_gpu(idx)
+                #     break
+                # break
+                # sys.exit()
                 output_main = frame_merge_final.download()# add_image_by_mask_gpu(frame_merge_final,cv2.cuda_GpuMat(frame),mask_merge)
             else:
                 frame_merge_final = frame.copy()
