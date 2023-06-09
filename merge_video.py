@@ -260,13 +260,14 @@ def load_bg_color():
 def load_Matrix_coor():
     global width_base_video,height_base_video, video_captures, List_points, M_coor_total,ratio_final
     default_bg = [1920.0,1080.0]
+    size_tmp = [1920.0,1080.0]
     #check ratio and get width, height tmp
-    if ratio_final == "16:9":
-        size_tmp = [1920.0,1080.0]
-    elif ratio_final == "9:16":
-        size_tmp = [608.0,1080.0]
-    elif ratio_final == "1:1":
-        size_tmp = [1080.0,1080.0]
+    # if ratio_final == "16:9":
+    #     size_tmp = [1920.0,1080.0]
+    # elif ratio_final == "9:16":
+    #     size_tmp = [608.0,1080.0]
+    # elif ratio_final == "1:1":
+    #     size_tmp = [1080.0,1080.0]
     
     for idx in range(len(video_captures)):
         if not video_captures[idx] is None:
@@ -337,14 +338,16 @@ def update_status(status):
     
 def check_res_final(ratio_, res_):
     scaled_res = [0,0] #(witdh, height)
+    res_ = int(res_)
+    ratio_ = "16:9"
     if ratio_ =="" or res_ == "":
         print(f"""Empty {"ratio" if ratio_ == "" else "resolution" } input""")
         return ['',''] 
-    res_ = int(res_)
-    if ratio_ == "9:16":
-        scaled_res[0] = int(res_)
-        scaled_tmp = int(res_*16/9) 
-        scaled_res[1] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
+    
+    # if ratio_ == "9:16":
+    #     scaled_res[0] = int(res_)
+    #     scaled_tmp = int(res_*16/9) 
+    #     scaled_res[1] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
     else:
         ratio_ = ratio_.split(':')
         ratio_ = list(map(int, ratio_))
@@ -381,25 +384,46 @@ if __name__=='__main__':
     
     scale_output = check_res_final(ratio_final,res_final)
     
+    
+    # pre-processed video according ratio
+    if ratio_final == "16:9":
+        preprocessed_size = [1920,1080]
+    elif ratio_final == "9:16":
+        preprocessed_size = [608,1080]
+    elif ratio_final == "1:1":
+        preprocessed_size = [1080,1080]
+    
     # prepare -vf sequence for scaling video
     if crop_to_fit:
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=increase, crop={scale_output[0]}:{scale_output[1]}"""
+        vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=increase, crop={preprocessed_size[0]}:{preprocessed_size[1]}"""
     else:
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
+        vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=1, pad={preprocessed_size[0]}:{preprocessed_size[1]}:-1:-1, setsar=1"""
     
     
-    #  #preprocessing main video
+     #preprocessing main video
+    video_preprocessed = video_main_path.split(".")[0] + "_preprocess.mp4"
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """ #
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """ #
+            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """
+            ffmpeg_preprocessed = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264_nvenc {video_preprocessed} """#
     else:
         if scale_output[0] == '':
             ffmpeg_cmd_main_video_tmp = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_preprocessed = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264 {video_preprocessed} """
+    
+    
+    if scale_output[0] != '':
+        print("FFMPEG COMMAND: ",ffmpeg_preprocessed)
+        os.system(ffmpeg_preprocessed)
+        time.sleep(2)        
+    
     print("FFMPEG COMMAND: ",ffmpeg_cmd_main_video_tmp)
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
@@ -533,7 +557,7 @@ if __name__=='__main__':
             
         print("######### COMPLETED  #########")
         time.sleep(1)
-        os.remove(output_nonsound)        
+        # os.remove(output_nonsound)        
     except Exception:
         print("Can not merge audio to output_video")
         os.rename(output_nonsound,save_path)
