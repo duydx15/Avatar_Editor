@@ -396,7 +396,7 @@ if __name__=='__main__':
     
     # prepare -vf sequence for scaling video
     if crop_to_fit:
-        vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=increase, crop={scale_output[0]}:{scale_output[1]}"""
+        vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
         vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=increase, crop={preprocessed_size[0]}:{preprocessed_size[1]}"""
     else:
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
