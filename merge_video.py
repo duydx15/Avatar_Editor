@@ -218,14 +218,15 @@ def load_cmd_input():
         different_length = next(name for name, length in lists.items() if length != most_frequent[0])
         print(f"The list {different_length} has a different length, expected: ",most_frequent[0])
         # sys.exit()
-    
+    scale_audio = float(1.0)*float(len(list_audio_path)+1)
     main_volume = args_tmp.main_volume
     avatar_volume = args_tmp.avatar_volume
-    main_volume = float(main_volume)
+    main_volume = float(main_volume)*scale_audio
+    
     if avatar_volume == "":
-        avatar_volume = np.ones(len(list_video_path),dtype=float)*1.08
+        avatar_volume = np.ones(len(list_video_path),dtype=float)*1.08*scale_audio
     else:
-        avatar_volume = [float(x)*1.08 for x in avatar_volume.split(",")]
+        avatar_volume = [float(x)*1.08*scale_audio for x in avatar_volume.split(",")]
     print("Avatar_volume: ", avatar_volume, main_volume)
     
     return list_video_path,list_audio_path,video_main_path,\
@@ -539,7 +540,7 @@ if __name__=='__main__':
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1}" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=1.2" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -555,7 +556,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)}" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=1.2" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
