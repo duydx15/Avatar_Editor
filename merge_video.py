@@ -218,15 +218,15 @@ def load_cmd_input():
         different_length = next(name for name, length in lists.items() if length != most_frequent[0])
         print(f"The list {different_length} has a different length, expected: ",most_frequent[0])
         # sys.exit()
-    scale_audio = float(1.0)*float(len(list_audio_path)+1)
+    
     main_volume = args_tmp.main_volume
     avatar_volume = args_tmp.avatar_volume
-    main_volume = float(main_volume)*scale_audio
+    main_volume = float(main_volume)
     
     if avatar_volume == "":
-        avatar_volume = np.ones(len(list_video_path),dtype=float)*1.08*scale_audio
+        avatar_volume = np.ones(len(list_video_path),dtype=float)*1.08
     else:
-        avatar_volume = [float(x)*1.08*scale_audio for x in avatar_volume.split(",")]
+        avatar_volume = [float(x)*1.08 for x in avatar_volume.split(",")]
     print("Avatar_volume: ", avatar_volume, main_volume)
     
     return list_video_path,list_audio_path,video_main_path,\
@@ -530,33 +530,36 @@ if __name__=='__main__':
     try:
         # Define for main audio
         if os.path.exists(main_audio):  #Case base audio has audio
+            scale_audio = float(0.8)*float(len(list_audio_path)+1)
             input_file = f"-i {output_nonsound} -i {main_audio}"
-            filer_complex_str = f"[1]adelay=0|0,volume={main_volume}[aud1];"
+            filer_complex_str = f"[1]adelay=0|0,volume={main_volume*scale_audio}[aud1];"
             map_str = ' -map 0:v -map 1:a '
             amix = '[aud1]'
+            
             for i  in range(len(list_audio_path)):
                 input_file = input_file + f" -i {list_audio_path[i]}"
-                filer_complex_str = filer_complex_str + f"[{i+2}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+2}];"
+                filer_complex_str = filer_complex_str + f"[{i+2}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]*scale_audio}[aud{i+2}];"
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=1.2" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=1.1" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
             # time.sleep(1)
             os.remove(main_audio)
         else: #Case base audio doesn't has audio
+            scale_audio = float(0.8)*float(len(list_audio_path))
             input_file = f"-i {output_nonsound} "
             filer_complex_str = ''
             # map_str = ''
             amix = ''
             for i  in range(len(list_audio_path)):
                 input_file = input_file + f" -i {list_audio_path[i]}"
-                filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]}[aud{i+1}];"
+                filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]*scale_audio}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=1.2" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=1.1" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
