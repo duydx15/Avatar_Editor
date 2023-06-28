@@ -123,8 +123,10 @@ def add_image_by_mask_gpu(img1, img2, mask_):
     return cv2.cuda.add(img2_no_mask, img1_mask_only)#.download()
 
 def write_frame(images,encoder_video):
+    global coorCropBox
     image_draw = cv2.cvtColor(images,cv2.COLOR_RGB2BGR)
     imageout = Image.fromarray(np.uint8(image_draw))
+    imageout = imageout.crop(coorCropBox)
     encoder_video.stdin.write(imageout.tobytes())
 
 
@@ -163,8 +165,8 @@ def load_cmd_input():
     parser.add_argument('--show_Avatar', default="True")
     parser.add_argument('--main_volume', default=1.0)
     parser.add_argument('--avatar_volume', default="")
-    parser.add_argument('--resolution', default='')
-    parser.add_argument('--ratio', default="")
+    parser.add_argument('--resolution', default='720')
+    parser.add_argument('--ratio', default="16:9")
     parser.add_argument('--crop_to_fit', default="True")
     
     args_tmp = parser.parse_args()
@@ -341,15 +343,19 @@ def update_status(status):
 def check_res_final(ratio_, res_):
     scaled_res = [0,0] #(witdh, height)
     res_ = int(res_)
-    ratio_ = "16:9"
+    # ratio_ = "16:9"
     if ratio_ =="" or res_ == "":
         print(f"""Empty {"ratio" if ratio_ == "" else "resolution" } input""")
         return ['',''] 
     
-    # if ratio_ == "9:16":
-    #     scaled_res[0] = int(res_)
-    #     scaled_tmp = int(res_*16/9) 
-    #     scaled_res[1] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
+    if ratio_ != "16:9":
+        # scaled_res[0] = int(res_)
+        ratio_ = ratio_.split(':')
+        ratio_ = list(map(int, ratio_))
+        scaled_tmp = int(res_*ratio_[1]/ratio_[0]) 
+        scaled_res[1] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
+        scaled_tmp = int(scaled_tmp*16/9) 
+        scaled_res[0] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
     else:
         ratio_ = ratio_.split(':')
         ratio_ = list(map(int, ratio_))
@@ -357,7 +363,27 @@ def check_res_final(ratio_, res_):
         scaled_tmp = int(res_*ratio_[0]/ratio_[1])
         scaled_res[0] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
     return scaled_res
-        
+
+def getRealResFinal(ratio,res_,scaletmp):
+    
+    scaled_res = [0,0] #(witdh, height)
+    res_ = int(res_)
+    # maskTmp = np.zeros((height,width),dtype=np.uint8)
+    # frameTmp = np.zeros((height,width),dtype=np.uint8)
+    if ratio == "9:16":
+        scaled_res[0] = int(res_)
+        scaled_tmp = int(res_*16/9) 
+        scaled_res[1] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
+        # cv2.rectangle(maskTmp,((width-height*9/16)/2,0),((width+height*9/16)/2,height),(255,255,255),thickness=-1)
+    else:
+        ratio = ratio.split(':')
+        ratio = list(map(int, ratio))
+        scaled_res[1] = res_
+        scaled_tmp = int(res_*ratio[0]/ratio[1])
+        scaled_res[0] = scaled_tmp if ((scaled_tmp%2) ==0) else (scaled_tmp+1)
+    _scaleFinal = (int((scaletmp[0]-scaled_res[0])/2),0,int((scaletmp[0]-scaled_res[0])/2)+scaled_res[0],scaled_res[1])
+    return scaled_res,_scaleFinal
+
 if __name__=='__main__':
    
     #Define global var
@@ -385,7 +411,7 @@ if __name__=='__main__':
             Timestamp_stop.append(0)
     
     scale_output = check_res_final(ratio_final,res_final)
-    
+    scaleFinal,coorCropBox = getRealResFinal(ratio_final,res_final,scale_output)
     
     # pre-processed video according ratio
     if ratio_final == "16:9":
@@ -403,23 +429,21 @@ if __name__=='__main__':
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
         vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=1, pad={preprocessed_size[0]}:{preprocessed_size[1]}:-1:-1, setsar=1"""
     
-    
      #preprocessing main video
     video_preprocessed = video_main_path.split(".")[0] + "_preprocess.mp4"
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f"""ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """
-            ffmpeg_preprocessed = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264_nvenc {video_preprocessed} """#
+            ffmpeg_cmd_main_video_tmp = f"""ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """
+            ffmpeg_preprocessed = f"""ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264_nvenc {video_preprocessed} """#
     else:
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f""" ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
-            ffmpeg_preprocessed = f"""  sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264 {video_preprocessed} """
-    
+            ffmpeg_cmd_main_video_tmp = f"""  ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_preprocessed = f"""  ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264 {video_preprocessed} """
     
     if scale_output[0] != '':
         print("FFMPEG COMMAND: ",ffmpeg_preprocessed)
@@ -442,14 +466,11 @@ if __name__=='__main__':
     # Check exist output_nonsound.mp4
     if os.path.exists(output_nonsound):
         os.remove(output_nonsound)
-    encoder_video = ffmpeg_encoder(output_nonsound, fps,width_base_video, height_base_video)
+    encoder_video = ffmpeg_encoder(output_nonsound, fps,scaleFinal[0], scaleFinal[1])
     
     # #Process timestamp
     Timestamp_start = [int(fps*x) for x in list_timestamp]
     cap_merge = None    
-    # width_base_video = scale_output[0]
-    # height_base_video = scale_output[1]
-    
     # Load data merge
     load_bg_color()
     load_Matrix_coor()
@@ -466,7 +487,7 @@ if __name__=='__main__':
     count_godot_video = 0
     merge_status = [False] * len(list_video_path)
     tqdm = tqdm(total=total_frames)
-    
+
     while cap.isOpened():
         
         ret, frame = cap.read()
@@ -488,10 +509,8 @@ if __name__=='__main__':
                 list_idx = np.where(merge_status)[0]
                 for idx in list_idx:
                     merge_frame_gpu(idx)
-                #     break
-                # break
-                # sys.exit()
-                output_main = frame_merge_final.download()# add_image_by_mask_gpu(frame_merge_final,cv2.cuda_GpuMat(frame),mask_merge)
+                # output_main = add_image_by_mask_gpu(frame_merge_final,frameFinal_GPU,maskFinal_GPU).download()
+                output_main = frame_merge_final.download()
             else:
                 frame_merge_final = frame.copy()
                 mask_merge = np.zeros((height_base_video,width_base_video),dtype=np.uint8)
@@ -500,13 +519,13 @@ if __name__=='__main__':
                 for idx in list_idx:
                     merge_frame(idx)
                 output_main = add_image_by_mask(frame_merge_final,frame,mask_merge)
+                # output_main = add_image_by_mask(frame_merge_final,frame,mask_merge)
                 # output_main = blend_images_using_mask(frame_merge_final,frame,mask_merge)
             write_frame(output_main,encoder_video)
             tqdm.update(1)
             count_frame +=1
             
         else:
-            
             #write frame base video without any merge
             write_frame(frame,encoder_video)
             tqdm.update(1)
@@ -542,7 +561,7 @@ if __name__=='__main__':
                 amix = amix + f"[aud{i+2}]"
                 map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=1.1" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+            ffmpeg_cmd = f"""ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=1.1" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             # print("######### COMPLETED  #########")
@@ -559,7 +578,7 @@ if __name__=='__main__':
                 filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]*scale_audio}[aud{i+1}];"
                 amix = amix + f"[aud{i+1}]"
                 # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f""" sudo /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=1.1" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+            ffmpeg_cmd = f""" ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=1.1" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
             print("FFMPEG COMMAND: ",ffmpeg_cmd)
             os.system(ffmpeg_cmd)
             
