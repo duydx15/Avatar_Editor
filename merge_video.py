@@ -11,6 +11,11 @@ import argparse
 import time 
 from collections import Counter
 import torch
+from pydub import AudioSegment
+import librosa
+import soundfile as sf
+
+
 # import cv2.cuda
 # import cupy as cp
 
@@ -226,9 +231,9 @@ def load_cmd_input():
     main_volume = float(main_volume)
     
     if avatar_volume == "":
-        avatar_volume = np.ones(len(list_video_path),dtype=float)*1.08
+        avatar_volume = np.ones(len(list_video_path),dtype=float)
     else:
-        avatar_volume = [float(x)*1.08 for x in avatar_volume.split(",")]
+        avatar_volume = [float(x) for x in avatar_volume.split(",")]
     print("Avatar_volume: ", avatar_volume, main_volume)
     
     return list_video_path,list_audio_path,video_main_path,\
@@ -384,6 +389,40 @@ def getRealResFinal(ratio,res_,scaletmp):
     _scaleFinal = (int((scaletmp[0]-scaled_res[0])/2),0,int((scaletmp[0]-scaled_res[0])/2)+scaled_res[0],scaled_res[1])
     return scaled_res,_scaleFinal
 
+def change_audio_volume(list_audios,volumes):
+    _list_audios = list_audios
+    for idx in range(len(list_audios)):
+        if volumes[idx] != 1.0:
+            data, sr = librosa.load(list_audios[idx],sr=None)
+            data *= volumes[idx]
+            split_path = list_audios[idx].split(".")
+            save_path = split_path[0] + "_reduce.wav"
+            if split_path[1] == "mp3":
+                data = np.transpose(data)
+            sf.write(save_path, data, sr)
+            _list_audios[idx] = save_path
+        
+    return _list_audios
+    
+def mix_audio(list_audio,timestamp,main_audio_path,video_length):
+    
+    global video_main_path_tmp
+    print(video_length)
+    if not os.path.exists(main_audio_path):
+        _,sr_video = librosa.load(video_main_path_tmp,sr=None)
+        sound_main = AudioSegment.silent(duration=video_length*1000,frame_rate=sr_video)
+    else:
+        sound_main = AudioSegment.from_file(main_audio_path)
+    
+    sound_mix = sound_main
+    for idx in range(len(list_audio)):
+        print(idx)
+        sound_tmp = AudioSegment.from_file(list_audio[idx])
+        sound_mix = sound_mix.overlay(sound_tmp,position=timestamp[idx]*1000)
+    final_audio_path = os.path.join(os.path.dirname( main_audio_path) , "final_audio.wav")
+    sound_mix.export(final_audio_path, format="wav", bitrate = "192k")
+    return final_audio_path
+
 if __name__=='__main__':
    
     #Define global var
@@ -399,7 +438,7 @@ if __name__=='__main__':
     list_video_path,list_audio_path,video_main_path,list_timestamp,\
     BG_color_list,save_path,List_points,main_volume,avatar_volume,\
     ratio_final, res_final,crop_to_fit = load_cmd_input()
-    list_timestamp_tmp = [x for x, y in zip(list_timestamp, list_video_path) if y != 'null']
+    # list_timestamp_tmp = [x for x, y in zip(list_timestamp, list_video_path) if y != 'null']
 
      # Append multiple godot videos
     for video_path in list_video_path:
@@ -434,16 +473,16 @@ if __name__=='__main__':
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f"""ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec h264_nvenc {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """
-            ffmpeg_preprocessed = f"""ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264_nvenc {video_preprocessed} """#
+            ffmpeg_cmd_main_video_tmp = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264_nvenc {video_main_path_tmp} """
+            ffmpeg_preprocessed = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264_nvenc {video_preprocessed} """#
     else:
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f""" ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""  ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
-            ffmpeg_preprocessed = f"""  ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264 {video_preprocessed} """
+            ffmpeg_cmd_main_video_tmp = f"""  sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_preprocessed = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264 {video_preprocessed} """
     
     if scale_output[0] != '':
         print("FFMPEG COMMAND: ",ffmpeg_preprocessed)
@@ -519,8 +558,6 @@ if __name__=='__main__':
                 for idx in list_idx:
                     merge_frame(idx)
                 output_main = add_image_by_mask(frame_merge_final,frame,mask_merge)
-                # output_main = add_image_by_mask(frame_merge_final,frame,mask_merge)
-                # output_main = blend_images_using_mask(frame_merge_final,frame,mask_merge)
             write_frame(output_main,encoder_video)
             tqdm.update(1)
             count_frame +=1
@@ -545,43 +582,50 @@ if __name__=='__main__':
         os.remove(main_audio)
     os.system(f""" ffmpeg  -y -i {video_main_path} -q:a 0 -map a {main_audio}""")
     # Merge audio
-    time.sleep(3)
+    time.sleep(1)
+
+    list_audio_path_mix = change_audio_volume(list_audio_path,avatar_volume) 
+    path_final_audio = mix_audio(list_audio_path_mix,list_timestamp,main_audio,float(total_frames/fps))
+    
     try:
-        # Define for main audio
-        if os.path.exists(main_audio):  #Case base audio has audio
-            scale_audio = float(0.8)*float(len(list_audio_path)+1)
-            input_file = f"-i {output_nonsound} -i {main_audio}"
-            filer_complex_str = f"[1]adelay=0|0,volume={main_volume*scale_audio}[aud1];"
-            map_str = ' -map 0:v -map 1:a '
-            amix = '[aud1]'
+        # # Define for main audio
+        # if os.path.exists(main_audio):  #Case base audio has audio
+        #     scale_audio = float(0.8)*float(len(list_audio_path)+1)
+        #     input_file = f"-i {output_nonsound} -i {main_audio}"
+        #     filer_complex_str = f"[1]adelay=0|0,volume={main_volume*scale_audio}[aud1];"
+        #     map_str = ' -map 0:v -map 1:a '
+        #     amix = '[aud1]'
             
-            for i  in range(len(list_audio_path)):
-                input_file = input_file + f" -i {list_audio_path[i]}"
-                filer_complex_str = filer_complex_str + f"[{i+2}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]*scale_audio}[aud{i+2}];"
-                amix = amix + f"[aud{i+2}]"
-                map_str = map_str + f' -map {i+2}:a'
+        #     for i  in range(len(list_audio_path)):
+        #         input_file = input_file + f" -i {list_audio_path[i]}"
+        #         filer_complex_str = filer_complex_str + f"[{i+2}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]*scale_audio}[aud{i+2}];"
+        #         amix = amix + f"[aud{i+2}]"
+        #         map_str = map_str + f' -map {i+2}:a'
             
-            ffmpeg_cmd = f"""ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=1.1" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
-            print("FFMPEG COMMAND: ",ffmpeg_cmd)
-            os.system(ffmpeg_cmd)
-            # print("######### COMPLETED  #########")
-            # time.sleep(1)
-            os.remove(main_audio)
-        else: #Case base audio doesn't has audio
-            scale_audio = float(0.8)*float(len(list_audio_path))
-            input_file = f"-i {output_nonsound} "
-            filer_complex_str = ''
-            # map_str = ''
-            amix = ''
-            for i  in range(len(list_audio_path)):
-                input_file = input_file + f" -i {list_audio_path[i]}"
-                filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]*scale_audio}[aud{i+1}];"
-                amix = amix + f"[aud{i+1}]"
-                # map_str = map_str + f' -map {i+2}:a'
-            ffmpeg_cmd = f""" ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=1.1" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
-            print("FFMPEG COMMAND: ",ffmpeg_cmd)
-            os.system(ffmpeg_cmd)
+        #     ffmpeg_cmd = f"""ffmpeg  -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)+1},volume=1.1" -c:v copy {map_str} -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+        #     print("FFMPEG COMMAND: ",ffmpeg_cmd)
+        #     os.system(ffmpeg_cmd)
+        #     # print("######### COMPLETED  #########")
+        #     # time.sleep(1)
+        #     os.remove(main_audio)
+        # else: #Case base audio doesn't has audio
+        #     scale_audio = float(0.8)*float(len(list_audio_path))
+        #     input_file = f"-i {output_nonsound} "
+        #     filer_complex_str = ''
+        #     # map_str = ''
+        #     amix = ''
+        #     for i  in range(len(list_audio_path)):
+        #         input_file = input_file + f" -i {list_audio_path[i]}"
+        #         filer_complex_str = filer_complex_str + f"[{i+1}]adelay={int(list_timestamp[i]*1000)}|{int(list_timestamp[i]*1000)},volume={avatar_volume[0]*scale_audio}[aud{i+1}];"
+        #         amix = amix + f"[aud{i+1}]"
+        #         # map_str = map_str + f' -map {i+2}:a'
+        #     ffmpeg_cmd = f""" ffmpeg -y {input_file} -filter_complex "{filer_complex_str}{amix}amix={len(list_audio_path)},volume=1.1" -c:v copy -ab 96k -codec:a libmp3lame -ac 1 {save_path}"""
+        #     print("FFMPEG COMMAND: ",ffmpeg_cmd)
+        #     os.system(ffmpeg_cmd)
             
+        ffmpeg_cmd_merge_audio = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg -y -i {output_nonsound} -i {path_final_audio} -c:v copy -c:a libmp3lame -b 192k {save_path}"""
+        print("FFMPEG COMMAND: ",ffmpeg_cmd_merge_audio)
+        os.system(ffmpeg_cmd_merge_audio)
         print("######### COMPLETED  #########")
         time.sleep(1)
         # os.remove(output_nonsound)        
