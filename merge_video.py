@@ -392,11 +392,12 @@ def getRealResFinal(ratio,res_,scaletmp):
 def change_audio_volume(list_audios,volumes):
     _list_audios = list_audios
     for idx in range(len(list_audios)):
-        if volumes[idx] != 1.0:
+        if volumes[idx] != 1.0 or list_audios[idx].endswith("mp3"):
             data, sr = librosa.load(list_audios[idx],sr=None)
-            data *= volumes[idx]
             split_path = list_audios[idx].split(".")
             save_path = split_path[0] + "_reduce.wav"
+            if volumes[idx] != 1.0:
+                data *= volumes[idx]
             if split_path[1] == "mp3":
                 data = np.transpose(data)
             sf.write(save_path, data, sr)
@@ -409,14 +410,13 @@ def mix_audio(list_audio,timestamp,main_audio_path,video_length):
     global video_main_path_tmp
     print(video_length)
     if not os.path.exists(main_audio_path):
-        _,sr_video = librosa.load(video_main_path_tmp,sr=None)
-        sound_main = AudioSegment.silent(duration=video_length*1000,frame_rate=sr_video)
+        # _,sr_video = librosa.load(video_main_path_tmp,sr=None)
+        sound_main = AudioSegment.silent(duration=video_length*1000,frame_rate=44100)
     else:
         sound_main = AudioSegment.from_file(main_audio_path)
     
     sound_mix = sound_main
     for idx in range(len(list_audio)):
-        print(idx)
         sound_tmp = AudioSegment.from_file(list_audio[idx])
         sound_mix = sound_mix.overlay(sound_tmp,position=timestamp[idx]*1000)
     final_audio_path = os.path.join(os.path.dirname( main_audio_path) , "final_audio.wav")
@@ -586,7 +586,7 @@ if __name__=='__main__':
 
     list_audio_path_mix = change_audio_volume(list_audio_path,avatar_volume) 
     path_final_audio = mix_audio(list_audio_path_mix,list_timestamp,main_audio,float(total_frames/fps))
-    
+    print("##################### List", list_audio_path_mix)
     try:
         # # Define for main audio
         # if os.path.exists(main_audio):  #Case base audio has audio
