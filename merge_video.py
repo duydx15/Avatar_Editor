@@ -72,7 +72,7 @@ def ffmpeg_encoder(outfile, fps, width, height):
                 vcodec=codec,
                 acodec="copy",
                 r=fps,
-                # crf=17,
+                crf=17,
                 vsync="1",
                 # async=4,
             )
@@ -476,16 +476,16 @@ if __name__=='__main__':
     video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     if torch.cuda.is_available():
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -filter_complex fps=25 -vcodec hevc_nvenc {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path}  -filter_complex fps=25 -crf 17 -vcodec hevc_nvenc {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec hevc_nvenc {video_main_path_tmp} """
-            ffmpeg_preprocessed = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec hevc_nvenc {video_preprocessed} """#
+            ffmpeg_cmd_main_video_tmp = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_preprocessed} -vf "{vf_param},fps=25" -crf 17 -c:a copy -vcodec hevc_nvenc {video_main_path_tmp} """
+            ffmpeg_preprocessed = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -crf 17 -c:a copy -vcodec hevc_nvenc {video_preprocessed} """#
     else:
         if scale_output[0] == '':
-            ffmpeg_cmd_main_video_tmp = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_cmd_main_video_tmp = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_main_path} -filter_complex fps=25 -crf 17 -vcodec h264 {video_main_path_tmp} """
         else:
-            ffmpeg_cmd_main_video_tmp = f"""  sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -c:a copy -vcodec h264 {video_main_path_tmp} """
-            ffmpeg_preprocessed = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -c:a copy -vcodec h264 {video_preprocessed} """
+            ffmpeg_cmd_main_video_tmp = f"""  sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -crf 17 -c:a copy -vcodec h264 {video_main_path_tmp} """
+            ffmpeg_preprocessed = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -crf 17 -c:a copy -vcodec h264 {video_preprocessed} """
     
     if scale_output[0] != '':
         print("FFMPEG COMMAND: ",ffmpeg_preprocessed)
