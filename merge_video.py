@@ -232,6 +232,9 @@ def load_cmd_input():
     
     if avatar_volume == "":
         avatar_volume = np.ones(len(list_video_path),dtype=float)
+    
+    elif len(list_audio_path) != len(avatar_volume.split(",")):     #Prevent number of input volume not equal to num of audio
+        avatar_volume = np.ones(len(list_audio_path),dtype=float)*float(avatar_volume.split(",")[0])
     else:
         avatar_volume = [float(x) for x in avatar_volume.split(",")]
     print("Avatar_volume: ", avatar_volume, main_volume)
