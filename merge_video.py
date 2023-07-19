@@ -72,7 +72,7 @@ def ffmpeg_encoder(outfile, fps, width, height):
                 vcodec=codec,
                 acodec="copy",
                 r=fps,
-                crf=17,
+                # crf=17,
                 vsync="1",
                 # async=4,
             )
@@ -463,17 +463,19 @@ if __name__=='__main__':
     elif ratio_final == "1:1":
         preprocessed_size = [1080,1080]
     
+     #preprocessing main video
+    video_preprocessed = video_main_path.split(".")[0] + "_preprocess.mp4"
+    video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
     # prepare -vf sequence for scaling video
     if crop_to_fit:
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
         vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=increase, crop={preprocessed_size[0]}:{preprocessed_size[1]}"""
+        video_preprocessed = video_main_path 
     else:
-        vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
+        vf_param = f"""scale={scale_output[0]}:{scayle_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
         vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=1, pad={preprocessed_size[0]}:{preprocessed_size[1]}:-1:-1, setsar=1"""
     
-     #preprocessing main video
-    video_preprocessed = video_main_path.split(".")[0] + "_preprocess.mp4"
-    video_main_path_tmp = video_main_path.split(".")[0] + "_tmp.mp4"
+    
     if torch.cuda.is_available():
         if scale_output[0] == '':
             ffmpeg_cmd_main_video_tmp = f"""sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -hwaccel_device 0 -hwaccel cuda -y -i {video_main_path}  -filter_complex fps=25 -crf 17 -vcodec hevc_nvenc {video_main_path_tmp} """
@@ -487,11 +489,12 @@ if __name__=='__main__':
             ffmpeg_cmd_main_video_tmp = f"""  sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -crf 17 -c:a copy -vcodec h264 {video_main_path_tmp} """
             ffmpeg_preprocessed = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -crf 17 -c:a copy -vcodec h264 {video_preprocessed} """
     
-    if scale_output[0] != '':
-        print("FFMPEG COMMAND: ",ffmpeg_preprocessed)
+    if scale_output[0] != '' and not crop_to_fit:
+        print("ffmpeg_preprocessed COMMAND: ",ffmpeg_preprocessed)
         os.system(ffmpeg_preprocessed)
-        time.sleep(2)        
-    
+        time.sleep(2)    
+           
+    print()
     print("FFMPEG COMMAND: ",ffmpeg_cmd_main_video_tmp)
     os.system(ffmpeg_cmd_main_video_tmp)
     time.sleep(1)
