@@ -122,12 +122,16 @@ def ffmpeg_encoder(outfile, fps, width, height,bitrate):
     return encoder_
 
 def fine_tune_timestamp(list_start,list_stop):
+    stop_last = list_stop[-1]
     list_stop = list_stop[:-1]
     list_stop.insert(0,0)
     for i in range(len(list_start)):
-        if list_start[i] <= list_stop[i]:
-            list_start[i] = list_stop[i]+2
-    return list_start
+        if list_start[i] > list_stop[i]:
+            list_stop[i] = list_start[i]
+    # list_start[0] = stop_1
+    list_stop.append(stop_last)
+    list_stop.remove(0)
+    return list_stop
 
 def mix_pixel(pix_1, pix_2, perc):
     return (perc/255 * pix_1) + ((255 - perc)/255 * pix_2)
@@ -335,7 +339,7 @@ def merge_frame_gpu(idx):
         return
     ret_merge, frame_merge = video_captures[idx].read()
     if not ret_merge:
-        return
+        frame_merge = previous_frame[idx]
     frame_merge_gpu = cv2.cuda_GpuMat(frame_merge)
     # print("type: ", lower_bound[idx].tolist(),type(lower_bound[idx].tolist()), type([ 61,100, 100]))
     # mask_tmp = cv2.cuda.warpPerspective(mask_fr,M_coor_total[idx],(width_base_video, height_base_video))
@@ -346,6 +350,7 @@ def merge_frame_gpu(idx):
     # cv2.imwrite("./Test_warp.png",frame_merge_tmp.download())
     # frame_merge_final =cv2.cuda.add(frame_merge_final,frame_merge_tmp)
     frame_merge_final = add_image_by_mask_gpu(frame_merge_tmp,frame_merge_final,mask_tmp)
+    previous_frame[idx] = frame_merge
 
 def merge_frame(idx):
     global width_base_video, height_base_video, mask_merge, frame_merge_final, video_captures
@@ -353,12 +358,13 @@ def merge_frame(idx):
         return
     ret_merge, frame_merge = video_captures[idx].read()
     if not ret_merge:
-        return
+        frame_merge = previous_frame[idx]
     mask_fr = cv2.inRange(cv2.cvtColor(frame_merge.astype(np.uint8), cv2.COLOR_BGR2HSV), lower_bound[idx], upper_bound[idx]) 
     mask =  cv2.bitwise_not(mask_fr)
     mask_tmp = cv2.warpPerspective(mask,M_coor_total[idx],(width_base_video, height_base_video), mask_merge,borderMode=cv2.BORDER_TRANSPARENT)
     frame_merge = cv2.bitwise_and(frame_merge,frame_merge,mask=mask)
     frame_merge_final = cv2.warpPerspective(frame_merge,M_coor_total[idx],(width_base_video, height_base_video), frame_merge_final, borderMode=cv2.BORDER_TRANSPARENT)
+    previous_frame[idx] = frame_merge
 
 def find_indices(list_to_check, item_to_find):
     return [idx for idx, value in enumerate(list_to_check) if value == item_to_find]
@@ -546,7 +552,7 @@ if __name__=='__main__':
     encoder_video = ffmpeg_encoder(output_nonsound, fps,scaleFinal[0], scaleFinal[1],bitrate_Output)
     
     # #Process timestamp
-    Timestamp_start = [int(fps*x) for x in list_timestamp]
+    Timestamp_start = [round(fps*x) for x in list_timestamp]
     cap_merge = None    
     # Load data merge
     load_bg_color()
@@ -555,12 +561,14 @@ if __name__=='__main__':
     Timestamp_stop = (np.array(Timestamp_stop) + np.array(Timestamp_start)).tolist()
     print("Timestamp_start: ", Timestamp_start)
     print("Timestamp_stop: ", Timestamp_stop)
-    # Timestamp_start = fine_tune_timestamp(Timestamp_start,Timestamp_stop.tolist())
+    Timestamp_stop = fine_tune_timestamp(Timestamp_start,Timestamp_stop)
+    print("Timestamp_stop_finetuned: ", Timestamp_stop)
     
     # Define count vars
     count_frame = 0
     count_godot_video = 0
     merge_status = [False] * len(list_video_path)
+    previous_frame = [None] * len(list_video_path)
     tqdm = tqdm(total=total_frames)
 
     while cap.isOpened():
