@@ -469,6 +469,7 @@ if __name__=='__main__':
     mask_merge = []
     frame_merge_final = []
     bitrate_Output = None
+    zoom_in = 1.0
     
     list_video_path,list_audio_path,video_main_path,list_timestamp,\
     BG_color_list,save_path,List_points,main_volume,avatar_volume,\
@@ -500,6 +501,7 @@ if __name__=='__main__':
     elif ratio_final == "9:16":
         preprocessed_size = [608,1080]
     elif ratio_final == "1:1":
+        zoom_in = 1.2
         preprocessed_size = [1080,1080]
          
     #preprocessing main video
@@ -509,8 +511,12 @@ if __name__=='__main__':
     # prepare -vf sequence for scaling video
     if crop_to_fit:
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
-        vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=increase, crop={preprocessed_size[0]}:{preprocessed_size[1]}"""
-        video_preprocessed = video_main_path
+        
+        if  ratio_final == "1:1":
+            vf_preprocessed_param = f"""scale={int(res_final)}:{int(res_final)}:force_original_aspect_ratio=increase, crop={int(int(res_final)/zoom_in)}:{int(int(res_final)/zoom_in)}"""
+        else:
+            vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=increase, crop={preprocessed_size[0]}:{preprocessed_size[1]}"""
+            video_preprocessed = video_main_path
     else:
         vf_param = f"""scale={scale_output[0]}:{scale_output[1]}:force_original_aspect_ratio=1, pad={scale_output[0]}:{scale_output[1]}:-1:-1, setsar=1"""
         vf_preprocessed_param = f"""scale={preprocessed_size[0]}:{preprocessed_size[1]}:force_original_aspect_ratio=1, pad={preprocessed_size[0]}:{preprocessed_size[1]}:-1:-1, setsar=1"""
@@ -528,7 +534,7 @@ if __name__=='__main__':
             ffmpeg_cmd_main_video_tmp = f"""  sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ffmpeg  -y -i {video_preprocessed} -vf "{vf_param},fps=25" -crf 17 -maxrate:v {bitrate_Output} -minrate:v {bitrate_Output} -c:a copy -vcodec h264 {video_main_path_tmp} """
             ffmpeg_preprocessed = f""" sudo  /home/ubuntu/anaconda3/envs/gazo/bin/ ffmpeg  -y -i {video_main_path} -vf "{vf_preprocessed_param},fps=25" -crf 17 -maxrate:v {bitrate_Output} -minrate:v {bitrate_Output} -c:a copy -vcodec h264 {video_preprocessed} """
     
-    if scale_output[0] != '' and not crop_to_fit:
+    if (scale_output[0] != '' and not crop_to_fit) or (crop_to_fit and ratio_final == "1:1") :
         print("FFMPEG COMMAND: ",ffmpeg_preprocessed)
         os.system(ffmpeg_preprocessed)
         time.sleep(2)        
@@ -634,7 +640,9 @@ if __name__=='__main__':
         os.system(ffmpeg_cmd_merge_audio)
         print("######### COMPLETED  #########")
         time.sleep(1)
-        # os.remove(output_nonsound)        
+        os.remove(output_nonsound)
+        os.remove(video_preprocessed)        
+        os.remove(video_main_path_tmp)
     except Exception:
         print("Can not merge audio to output_video")
         os.rename(output_nonsound,save_path)
