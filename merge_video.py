@@ -643,6 +643,9 @@ if __name__=='__main__':
         os.remove(output_nonsound)
         os.remove(video_preprocessed)        
         os.remove(video_main_path_tmp)
+        os.remove(path_final_audio)
+        if os.path.exists(main_audio):
+            os.remove(main_audio)
     except Exception:
         print("Can not merge audio to output_video")
         os.rename(output_nonsound,save_path)
